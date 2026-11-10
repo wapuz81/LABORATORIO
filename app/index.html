@@ -465,7 +465,7 @@ function telaBenk(id){
     <section class="card">
       <div class="seg" role="group" aria-label="Lado">${[["LE","Lado esquerdo"],["EIXO","Eixo"],["LD","Lado direito"]].map(([k,t])=>`<button type="button" data-lado="${k}" aria-pressed="${ladoAtual===k}">${t} <span id="n_${k}"></span></button>`).join("")}</div>
       <div class="tblwrap"><table class="lt"><thead><tr><th style="width:32%">Estaca</th><th>L i</th><th class="l25">L 25</th><th>L f</th><th style="text-align:right">D</th><th style="width:40px"></th></tr></thead><tbody id="leit"></tbody></table></div>
-      <div class="row"><button class="btn" type="button" id="addLeit">+ Próxima estaca</button><span class="note grow">D = (L i − L f) × K, em 0,01 mm. A coluna L 25 aparece com o celular deitado.</span></div>
+      <div class="row"><button class="btn primary" type="button" id="addLeit">+ Próxima estaca</button><span class="note grow">Digite a leitura final (L f) e toque em Enter/Próximo para ir à estaca seguinte. D = (L i − L f) × K, em 0,01 mm. A coluna L 25 aparece com o celular deitado.</span></div>
     </section>
     <h2>Resultado</h2>
     <section class="card" id="resBenk"></section>
@@ -474,15 +474,18 @@ function telaBenk(id){
   $("#c_k").oninput=ev=>{e.k=ev.target.value;DB.cad.cfg.kViga=ev.target.value;tocou(e);salvar();desenharLeit(e);};
   $("#c_adm").oninput=ev=>{e.admManual=ev.target.value;tocou(e);salvar();atualizarBenk(e);};
   document.querySelectorAll("[data-lado]").forEach(b=>b.onclick=()=>{ladoAtual=b.dataset.lado;document.querySelectorAll("[data-lado]").forEach(x=>x.setAttribute("aria-pressed",x===b));desenharLeit(e);});
-  $("#addLeit").onclick=()=>{const L=e.leituras[ladoAtual];const u=L[L.length-1];
-    L.push({estaca:proxEstaca(L)||(e.segmento||"").split(/\s*(?:a|á|à|-)\s*/i)[0]||"",li:u?u.li:fmtIn(DB.cad.cfg.li),l25:"",lf:""});
-    tocou(e);salvar();desenharLeit(e);const ins=document.querySelectorAll('#leit input[data-k="lf"]');ins[ins.length-1].focus();};
+  $("#addLeit").onclick=()=>addLeit(e);
   ligarRodape(e);
   desenharLeit(e);
   setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
 }
+function novaLeit(e,L){const u=L[L.length-1];
+  return {estaca:proxEstaca(L)||(e.segmento||"").split(/\s*(?:a|á|à|-)\s*/i)[0]||"",li:u?u.li:fmtIn(DB.cad.cfg.li),l25:"",lf:""};}
+function addLeit(e){const L=e.leituras[ladoAtual];L.push(novaLeit(e,L));
+  tocou(e);salvar();desenharLeit(e);const ins=document.querySelectorAll('#leit input[data-k="lf"]');ins[ins.length-1].focus();}
 function desenharLeit(e){
   const L=e.leituras[ladoAtual];
+  if(!L.length) L.push(novaLeit(e,L));   // cada lado já abre com uma linha pronta para digitar
   $("#leit").innerHTML=L.length?L.map((l,i)=>`<tr data-i="${i}">
       <td><input data-k="estaca" value="${esc(l.estaca)}" aria-label="Estaca"></td>
       <td><input data-k="li" class="num" inputmode="decimal" value="${esc(l.li)}" aria-label="Leitura inicial"></td>
@@ -493,6 +496,8 @@ function desenharLeit(e){
     :`<tr><td colspan="6"><div class="empty">Sem leituras neste lado. Toque em “+ Próxima estaca”.</div></td></tr>`;
   $("#leit").querySelectorAll("tr[data-i]").forEach(tr=>{const i=+tr.dataset.i,l=L[i];
     tr.querySelectorAll("input").forEach(inp=>inp.oninput=()=>{l[inp.dataset.k]=inp.value;tocou(e);salvar();atualizarBenk(e);});
+    const lf=tr.querySelector('input[data-k="lf"]');lf.enterKeyHint="next";
+    lf.onkeydown=ev=>{if(ev.key==="Enter"){ev.preventDefault();if(i===L.length-1)addLeit(e);else{const nx=document.querySelector(`#leit tr[data-i="${i+1}"] input[data-k="lf"]`);nx&&nx.focus();}}};
     tr.querySelector("[data-rm]").onclick=()=>{L.splice(i,1);tocou(e);salvar();desenharLeit(e);};});
   atualizarBenk(e);
 }
@@ -505,7 +510,7 @@ function atualizarBenk(e){
   const L=e.leituras[ladoAtual];
   L.forEach((l,i)=>{const td=document.querySelector(`[data-d="${i}"]`);if(!td)return;const d=calcLeit(e,l);
     td.textContent=ok(d)?fmt(d,0):"–";td.style.color=ok(d)&&ok(adm)?(d>adm?"var(--bad)":"var(--ok)"):"";});
-  ["LE","EIXO","LD"].forEach(s=>{const n=e.leituras[s].length;$("#n_"+s).textContent=n?`(${n})`:"";});
+  ["LE","EIXO","LD"].forEach(s=>{const n=e.leituras[s].filter(l=>ok(num(l.lf))).length;$("#n_"+s).textContent=n?`(${n})`:"";});
   const r=resumoBenk(e);
   $("#resBenk").innerHTML=r.n?`
     <div class="calc">
@@ -579,7 +584,7 @@ function pacote(lista){
               gcOk:c.gcOk,umidadeOk:c.hOk}};})});
       } else {
         const r=resumoBenk(e);
-        const lado=s=>e.leituras[s].map(l=>({estaca:l.estaca,li:n2(l.li),l25:n2(l.l25),lf:n2(l.lf),deflexao:ok(calcLeit(e,l))?calcLeit(e,l):null}));
+        const lado=s=>e.leituras[s].filter(l=>ok(num(l.lf))).map(l=>({estaca:l.estaca,li:n2(l.li),l25:n2(l.l25),lf:n2(l.lf),deflexao:ok(calcLeit(e,l))?calcLeit(e,l):null}));
         Object.assign(base,{k:n2(e.k),admissivel:ok(r.adm)?r.adm:null,admManual:ok(num(e.admManual)),
           leituras:{LE:lado("LE"),EIXO:lado("EIXO"),LD:lado("LD")},
           resumo:{pontos:r.n,media:ok(r.media)?+r.media.toFixed(2):null,desvio:ok(r.dp)?+r.dp.toFixed(2):null,dc:ok(r.dc)?+r.dc.toFixed(2):null,acimaAdm:r.acima}});
