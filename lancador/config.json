@@ -1,0 +1,27 @@
+{
+  "_leia": "Ajuste os caminhos abaixo. modo = \"teste\" grava CÓPIAS na pasta SAIDA; modo = \"gravar\" altera os arquivos originais (a versão anterior vai para a subpasta ANTIGO).",
+  "modo": "teste",
+  "pastaEntrada": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\APP CAMPO\\ENTRADA",
+  "pastaSaidaTeste": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\APP CAMPO\\SAIDA",
+  "resumo": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2611 - Resumo Ensaios Trincheira.xlsx",
+  "fichasDensidade": {
+    "Moledo": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\SL - DENSIDADE IN-SITU-MOLEDO.xlsx",
+    "Brita 4A": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\SL - DENSIDADE IN-SITU-4A.xlsx",
+    "BGS": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\SL - DENSIDADE IN-SITU-BGS.xlsx",
+    "BGS Cotragon": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\SL - DENSIDADE IN-SITU-BGS.xlsx",
+    "Bica Corrida": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\IN-SITU-BICA CORRIDA.xlsx"
+  },
+  "fichasBenkelman": {
+    "Moledo": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\VIGA MOLEDO.xlsx",
+    "Brita 4A": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\SL - VIGA BENKELMAN-BRITA-4A.xlsx",
+    "BGS": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\VIGA BGS.xlsx",
+    "BGS Cotragon": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\VIGA BGS.xlsx",
+    "Bica Corrida": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\VIGA BICA CORRIDA.xlsx",
+    "CAUQ C": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\VIGA CAUQ- C_.xlsx"
+  },
+  "_materialNoResumo": "Nome do material como aparece na coluna Material do Resumo (a aba Proj. Exec. busca a umidade ótima por esse nome).",
+  "materialNoResumo": {
+    "Brita 4A": "4A",
+    "BGS Cotragon": "BGS"
+  }
+}

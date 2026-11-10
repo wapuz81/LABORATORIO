@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ensaios de Campo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#1F4E78">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+/* Layout: uma coluna estreita, pensada para celular ao sol; barra superior fixa, cartões só onde há um ensaio ou um furo */
+:root{
+  --bg:#EEF2F6; --surface:#FFFFFF; --sunk:#E3E9F0; --fg:#14212E; --muted:#56677A; --line:#C9D3DE;
+  --accent:#1F4E78; --accent-fg:#FFFFFF; --accent-soft:#D6E4F0;
+  --ok:#1E7A3C; --ok-soft:#DDF1E3; --bad:#B42318; --bad-soft:#FBE3E0; --warn:#9A6200; --warn-soft:#FBEFD5;
+  --calc:#DDEBF7;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E161F; --surface:#16222E; --sunk:#1D2B39; --fg:#E6EDF4; --muted:#93A4B6; --line:#2C3D4F;
+  --accent:#7FB3E0; --accent-fg:#0B1825; --accent-soft:#1F3850;
+  --ok:#6DD08E; --ok-soft:#173826; --bad:#FF8A7A; --bad-soft:#41201C; --warn:#F2C062; --warn-soft:#3B2E12;
+  --calc:#1B3247; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E161F; --surface:#16222E; --sunk:#1D2B39; --fg:#E6EDF4; --muted:#93A4B6; --line:#2C3D4F;
+  --accent:#7FB3E0; --accent-fg:#0B1825; --accent-soft:#1F3850;
+  --ok:#6DD08E; --ok-soft:#173826; --bad:#FF8A7A; --bad-soft:#41201C; --warn:#F2C062; --warn-soft:#3B2E12;
+  --calc:#1B3247; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:16px/1.4 var(--font);-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--accent)}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--accent);color:var(--accent-fg);
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;align-items:center;gap:10px}
+header.top h1{font-size:17px;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em}
+header.top button{background:transparent;color:inherit;border:1px solid color-mix(in srgb,var(--accent-fg) 45%,transparent);border-radius:8px;padding:7px 11px;font:inherit;font-size:14px}
+main{max-width:720px;margin:0 auto;padding-block:14px 120px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:6px 0 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.grid .full{grid-column:1/-1}
+@media (min-width:560px){.grid.g3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+label.f span.u{color:var(--muted);font-weight:400}
+input,select,textarea{font:inherit;font-size:17px;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:1px}
+input.num{font-variant-numeric:tabular-nums;text-align:right}
+.btn{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:10px;padding:12px 14px;font:inherit;font-weight:600;cursor:pointer;min-height:46px}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.btn.small{min-height:36px;padding:6px 10px;font-size:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row>.grow{flex:1}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;border:0;background:var(--surface);color:var(--fg);font:inherit;font-weight:600;padding:10px 4px;min-height:44px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:700;white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.neutral{background:var(--sunk);color:var(--muted)}
+.calc{background:var(--calc);border-radius:8px;padding:10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;font-variant-numeric:tabular-nums}
+@media (min-width:560px){.calc{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.calc div{display:flex;flex-direction:column;font-size:12px;color:var(--muted)}
+.calc b{font-size:17px;color:var(--fg)}
+.list{display:flex;flex-direction:column;gap:10px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}
+.item .tag{font-family:var(--mono);font-size:13px;background:var(--sunk);border-radius:6px;padding:4px 6px;white-space:nowrap}
+.item .main{flex:1;min-width:0}
+.item .t{font-weight:700}
+.item .s{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.empty{color:var(--muted);text-align:center;padding:28px 10px;border:1px dashed var(--line);border-radius:12px}
+.furo-h{display:flex;align-items:center;gap:8px}
+.furo-h b{flex:1}
+table.lt{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+table.lt th{font-size:12px;color:var(--muted);font-weight:600;text-align:left;padding:4px 4px}
+table.lt td{padding:3px 3px;vertical-align:middle}
+table.lt td.d{text-align:right;font-weight:700;white-space:nowrap;background:var(--calc);border-radius:6px;padding:6px 8px}
+table.lt input{padding:8px 5px;font-size:16px}
+@media (max-width:479px){table.lt .l25{display:none}}
+.tblwrap{overflow-x:auto}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--surface);border-top:1px solid var(--line);
+  padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.bar .in{max-width:720px;margin:0 auto;display:flex;gap:10px}
+.bar .in .btn{flex:1}
+.note{font-size:13px;color:var(--muted)}
+.stat{display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;z-index:20;max-width:90vw}
+.confirm{background:var(--bad-soft);border:1px solid color-mix(in srgb,var(--bad) 35%,transparent);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+textarea.exp{font-family:var(--mono);font-size:12px;height:140px}
+.newbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.newbtns .btn{min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.newbtns .btn small{font-weight:400;font-size:12px;opacity:.85}
+.filter{display:flex;gap:8px;overflow-x:auto}
+.filter .btn{white-space:nowrap}
+@media (prefers-reduced-motion:no-preference){.item,.btn{transition:background-color .15s,border-color .15s}}
+</style>
+</head>
+<body>
+<header class="top">
+  <button id="btnVoltar" type="button" hidden>‹ Voltar</button>
+  <h1 id="titulo">Ensaios de Campo</h1>
+  <button id="btnMenu" type="button">Cadastros</button>
+</header>
+<main id="app"></main>
+<div class="bar" id="bar" hidden><div class="in" id="barIn"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* ================= Dados padrão (tirados do 2611 - Resumo Ensaios Trincheira) ================= */
+const CAMADAS = ["Subleito","Reforço","Sub-base","Base","Revestimento"];
+// Deflexão admissível (0,01 mm) por Número N × camada — mesma tabela da fórmula da aba "Viga. Benk"
+const TAB_ADM = {
+  1e6:[200,200,150,120,80], 2e6:[180,180,140,100,70], 5e6:[175,175,135,90,60],
+  2e7:[170,170,130,80,50], 4e7:[170,170,120,70,45], 5e7:[170,170,110,65,40]
+};
+const PADRAO = {
+  ruas:[
+    {nome:"Arthur Euclides de Moura",N:2e7},{nome:"André Szalbot",N:5e6},{nome:"Batista da Costa",N:2e7},
+    {nome:"Eloi Orestes Zeglin",N:2e7},{nome:"Estephana Pietruza",N:2e7},{nome:"Hermenegildo Bonat",N:2e7},
+    {nome:"Jovina de Oliveira Karam",N:2e7},{nome:"Marechal Althayr Roszanniy",N:5e7},{nome:"Torquato Tasso",N:5e6}
+  ],
+  materiais:[
+    {nome:"Moledo",procedencia:"Pedreira Costa",otima:6.4,densLab:2198,densReal:""},
+    {nome:"Brita 4A",procedencia:"Mineração Barigui",otima:6.2,densLab:"",densReal:""},
+    {nome:"BGS",procedencia:"Min. Cantareira",otima:5.9,densLab:"",densReal:""},
+    {nome:"BGS Cotragon",procedencia:"Pedreira Cotragon",otima:4.9,densLab:"",densReal:""},
+    {nome:"Bica Corrida",procedencia:"Pedreira Costa",otima:6.1,densLab:"",densReal:""},
+    {nome:"BGTC",procedencia:"",otima:"",densLab:"",densReal:""},
+    {nome:"CAUQ B",procedencia:"Min. Morro Redondo",otima:"",densLab:"",densReal:""},
+    {nome:"CAUQ C",procedencia:"Min. Morro Redondo",otima:"",densLab:"",densReal:""}
+  ],
+  empreiteiras:["VDL"],
+  cfg:{areiaCone:1765, densAreia:1338, kViga:2, li:500, laboratorista:""}
+};
+const CHAVE = "lab-campo-v1";
+/* ================= Armazenamento ================= */
+let DB;
+function carregar(){
+  let d=null;
+  try{ d=JSON.parse(localStorage.getItem(CHAVE)||"null"); }catch(e){}
+  if(!d) d={ensaios:[],cad:JSON.parse(JSON.stringify(PADRAO))};
+  d.cad=Object.assign(JSON.parse(JSON.stringify(PADRAO)),d.cad||{});
+  d.cad.cfg=Object.assign({},PADRAO.cfg,d.cad.cfg||{});
+  if(!d.ensaios) d.ensaios=[];
+  return d;
+}
+let avisouArmazenamento=false;
+function salvar(){
+  try{ localStorage.setItem(CHAVE,JSON.stringify(DB)); }
+  catch(e){ if(!avisouArmazenamento){ toast("Atenção: este navegador não está guardando os dados. Exporte antes de fechar."); avisouArmazenamento=true; } }
+}
+DB=carregar();
+if(!DB.ensaios.length && !localStorage.getItem(CHAVE+"-semexemplo")){ DB.ensaios=exemplos(); }
+
+/* ================= Utilidades ================= */
+const $=s=>document.querySelector(s);
+const num=v=>{ if(v===""||v==null) return NaN; const n=parseFloat(String(v).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:NaN; };
+const ok=n=>Number.isFinite(n);
+const fmt=(n,d=1)=>ok(n)?n.toLocaleString("pt-BR",{minimumFractionDigits:d,maximumFractionDigits:d}):"–";
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const hoje=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+const dataBR=iso=>iso?iso.split("-").reverse().join("/"):"";
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2600);}
+// Estaca "506+10" -> metros (estaca de 20 m)
+function estM(s){const m=String(s||"").trim().match(/^(\d+)\s*\+\s*(\d+(?:[.,]\d+)?)$/);if(m)return +m[1]*20+num(m[2]);const n=num(s);return ok(n)?n*20:NaN;}
+function mEst(m){const e=Math.floor(m/20),r=Math.round((m-e*20)*100)/100;return e+"+"+String(r).replace(".",",").padStart(2,"0");}
+function proxEstaca(lista){
+  const v=lista.map(x=>estM(x.estaca)).filter(ok);
+  if(!v.length) return "";
+  const passo=v.length>1?(v[v.length-1]-v[v.length-2]):10;
+  return mEst(v[v.length-1]+(passo||10));
+}
+function ruaN(nome){const r=DB.cad.ruas.find(x=>x.nome===nome);return r?r.N:NaN;}
+function admissivel(N,camada){const lin=TAB_ADM[N];const i=CAMADAS.indexOf(camada);return lin&&i>=0?lin[i]:NaN;}
+function material(nome){return DB.cad.materiais.find(m=>m.nome===nome);}
+function nomeN(N){return ok(N)?(N/Math.pow(10,Math.floor(Math.log10(N)))).toLocaleString("pt-BR")+"×10"+sup(Math.floor(Math.log10(N))):"–";}
+function sup(n){return String(n).split("").map(c=>"⁰¹²³⁴⁵⁶⁷⁸⁹"[+c]).join("");}
+
+/* ================= Cálculos (mesmas fórmulas das fichas) ================= */
+// Densidade in situ (frasco de areia) — ficha "SL - DENSIDADE IN-SITU", colunas K..S
+function calcFuro(c,f){
+  const antes=num(f.antes),depois=num(f.depois),mat=num(f.material),ret=ok(num(f.retido))?num(f.retido):0,h=num(f.umidade);
+  const cone=num(c.areiaCone),dA=num(c.densAreia),dR=num(c.densReal),dLab=num(c.densLab);
+  const areiaDesl=antes-depois;              // K = 1 - 2
+  const areiaCav=areiaDesl-cone;             // L = 9 - 6
+  const volRet=ret&&ok(dR)?ret/dR:0;         // M = 4 / 5
+  const vol=areiaCav/dA-volRet;              // N = (10 / 7) - 11
+  const dUmida=(mat-ret)/vol;                // P = (4 - 3) / 12
+  const dSeca=dUmida/(100+h)*100;            // R = 13 / (100+h)
+  const gc=dSeca/dLab*100;                   // S = 15 / 8
+  const ot=num(c.otima);
+  const dh=h-ot;
+  return {areiaDesl,areiaCav,vol,dUmida,dSeca,gc:ok(gc)&&gc>0?gc:NaN,dh,
+    gcOk: ok(gc)?gc>=100:null,
+    hOk: ok(dh)?(dh>=-2-1e-9&&dh<=1+1e-9):null};
+}
+// Viga Benkelman — D = (Li - Lf) × K
+function calcLeit(c,l){const li=num(l.li),lf=num(l.lf),k=num(c.k);const d=(li-lf)*k;return ok(d)?Math.round(d*100)/100:NaN;}
+function resumoBenk(e){
+  const adm=admBenk(e);
+  const ds=[];["LE","EIXO","LD"].forEach(s=>(e.leituras[s]||[]).forEach(l=>{const d=calcLeit(e,l);if(ok(d))ds.push(d);}));
+  const n=ds.length, media=n?ds.reduce((a,b)=>a+b,0)/n:NaN;
+  const dp=n>1?Math.sqrt(ds.reduce((a,b)=>a+(b-media)**2,0)/(n-1)):NaN;
+  const dc=ok(dp)?media+dp:media;
+  const acima=ok(adm)?ds.filter(d=>d>adm).length:0;
+  return {n,media,dp,dc,max:n?Math.max(...ds):NaN,adm,acima};
+}
+function admBenk(e){const o=num(e.admManual);if(ok(o))return o;return admissivel(ruaN(e.rua),e.camada);}
+
+/* ================= Exemplos (marcados) ================= */
+function exemplos(){
+  return [{
+    id:"exemplo-dens",exemplo:true,tipo:"densidade",status:"rascunho",criado:Date.now(),
+    registro:"41",data:"2026-09-21",rua:"Torquato Tasso",segmento:"804+00 a 808+10",camada:"Reforço",material:"Moledo",
+    procedencia:"Extrabel",empreiteira:"VDL",otima:"6,6",densLab:"2198",densReal:"",areiaCone:"1765",densAreia:"1338",obs:"",
+    furos:[{estaca:"807+00",posicao:"Eixo",altura:"14,5",antes:"9490",depois:"4672",material:"5316",retido:"",umidade:"5,8"}]
+  },{
+    id:"exemplo-benk",exemplo:true,tipo:"benkelman",status:"rascunho",criado:Date.now()-1,
+    registro:"32",data:"2026-09-29",rua:"Batista da Costa",segmento:"506+00 a 512+00",camada:"Sub-base",material:"Brita 4A",
+    procedencia:"Pedreira Costa",empreiteira:"VDL",k:"2",admManual:"",obs:"",
+    leituras:{
+      LE:[["506+00",472],["507+00",449],["508+00",468],["509+00",456],["510+00",446],["511+00",453],["512+00",480]].map(([e,lf])=>({estaca:e,li:"500",l25:"",lf:String(lf)})),
+      EIXO:[["506+00",480],["506+10",449],["507+00",457],["507+10",465],["508+00",437]].map(([e,lf])=>({estaca:e,li:"500",l25:"",lf:String(lf)})),
+      LD:[["506+00",480],["507+00",457],["508+00",437],["509+00",463]].map(([e,lf])=>({estaca:e,li:"500",l25:"",lf:String(lf)}))
+    }
+  }];
+}
+
+/* ================= Navegação ================= */
+let tela={nome:"lista"}, filtro="todos", confirmando=null;
+function ir(nome,arg){tela={nome,arg};confirmando=null;render();window.scrollTo(0,0);}
+$("#btnVoltar").onclick=()=>ir("lista");
+$("#btnMenu").onclick=()=>ir(tela.nome==="cadastros"?"lista":"cadastros");
+
+function setBar(btns){
+  const bar=$("#bar"),inn=$("#barIn");
+  if(!btns){bar.hidden=true;inn.innerHTML="";return;}
+  bar.hidden=false;inn.innerHTML="";
+  btns.forEach(b=>{const el=document.createElement("button");el.type="button";el.className="btn "+(b.cls||"");el.textContent=b.t;el.onclick=b.f;inn.appendChild(el);});
+}
+function render(){
+  const v=tela.nome;
+  $("#btnVoltar").hidden=(v==="lista");
+  $("#btnMenu").hidden=(v!=="lista"&&v!=="cadastros");
+  $("#btnMenu").textContent=v==="cadastros"?"Fechar":"Cadastros";
+  if(v==="lista") telaLista();
+  else if(v==="dens") telaDens(tela.arg);
+  else if(v==="benk") telaBenk(tela.arg);
+  else if(v==="cadastros") telaCad();
+  else if(v==="exportar") telaExport();
+}
+
+/* ================= Tela: lista ================= */
+function proxRegistro(tipo){
+  const r=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).map(e=>parseInt(e.registro)).filter(ok);
+  return r.length?String(Math.max(...r)+1):"";
+}
+function novo(tipo){
+  const c=DB.cad.cfg;
+  const ult=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).sort((a,b)=>b.criado-a.criado)[0]||{};
+  const base={id:uid(),tipo,status:"rascunho",criado:Date.now(),registro:proxRegistro(tipo),data:hoje(),
+    rua:ult.rua||"",segmento:"",camada:ult.camada||"",material:ult.material||"",procedencia:ult.procedencia||"",
+    empreiteira:ult.empreiteira||DB.cad.empreiteiras[0]||"",obs:"",laboratorista:c.laboratorista||""};
+  let e;
+  if(tipo==="densidade"){
+    const m=material(base.material)||{};
+    e=Object.assign(base,{otima:fmtIn(m.otima),densLab:fmtIn(m.densLab),densReal:fmtIn(m.densReal),areiaCone:fmtIn(c.areiaCone),densAreia:fmtIn(c.densAreia),
+      furos:[novoFuro()]});
+  } else {
+    e=Object.assign(base,{k:fmtIn(c.kViga),admManual:"",leituras:{LE:[],EIXO:[],LD:[]}});
+  }
+  DB.ensaios.push(e);salvar();ir(tipo==="densidade"?"dens":"benk",e.id);
+}
+function novoFuro(){return {estaca:"",posicao:"Eixo",altura:"",antes:"",depois:"",material:"",retido:"",umidade:""};}
+function fmtIn(v){return v===""||v==null?"":String(v).replace(".",",");}
+
+function situacao(e){
+  if(e.tipo==="densidade"){
+    const cs=(e.furos||[]).map(f=>calcFuro(e,f)).filter(c=>ok(c.gc));
+    if(!cs.length) return {cls:"neutral",t:"sem leitura"};
+    const ruim=cs.filter(c=>c.gcOk===false||c.hOk===false).length;
+    return ruim?{cls:"bad",t:ruim+" furo(s) verif."}:{cls:"ok",t:cs.length+" furo(s) ok"};
+  } else {
+    const r=resumoBenk(e);
+    if(!r.n) return {cls:"neutral",t:"sem leitura"};
+    if(!ok(r.adm)) return {cls:"warn",t:r.n+" pontos · sem adm."};
+    return r.acima?{cls:"bad",t:r.acima+" ponto(s) > adm."}:{cls:"ok",t:r.n+" pontos ok"};
+  }
+}
+function telaLista(){
+  $("#titulo").textContent="Ensaios de Campo";
+  const ens=DB.ensaios.slice().sort((a,b)=>(b.data||"").localeCompare(a.data||"")||b.criado-a.criado)
+    .filter(e=>filtro==="todos"||(filtro==="pend"?e.status!=="exportado":e.tipo===filtro));
+  const pend=DB.ensaios.filter(e=>e.status!=="exportado"&&!e.exemplo).length;
+  const temEx=DB.ensaios.some(e=>e.exemplo);
+  $("#app").innerHTML=`
+    <section class="newbtns" aria-label="Novo ensaio">
+      <button class="btn primary" type="button" id="nDens">+ Densidade in situ<small>frasco de areia</small></button>
+      <button class="btn primary" type="button" id="nBenk">+ Viga Benkelman<small>deflexões</small></button>
+    </section>
+    ${temEx?`<div class="note card" style="gap:8px">Os dois ensaios marcados como EXEMPLO usam valores das fichas R41 (densidade) e R32 (Benkelman) só para mostrar como o app funciona.
+      <div><button class="btn small" type="button" id="limparEx">Apagar exemplos</button></div></div>`:""}
+    <div class="filter" role="group" aria-label="Filtro">
+      ${[["todos","Todos"],["pend","Não exportados"],["densidade","Densidade"],["benkelman","Benkelman"]].map(([k,t])=>`<button type="button" class="btn small" data-f="${k}" aria-pressed="${filtro===k}" style="${filtro===k?"background:var(--accent-soft);border-color:var(--accent)":""}">${t}</button>`).join("")}
+    </div>
+    <div class="list">
+      ${ens.length?ens.map(e=>{const s=situacao(e);return `
+        <button class="item" type="button" data-id="${e.id}">
+          <span class="tag">${e.tipo==="densidade"?"DENS":"VIGA"} R${esc(e.registro||"?")}</span>
+          <span class="main"><span class="t">${esc(e.rua||"Rua não informada")}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
+            <span class="s" style="display:block">${dataBR(e.data)} · ${esc(e.material||"material?")} · ${esc(e.camada||"camada?")}${e.status==="exportado"?" · exportado":""}</span></span>
+          <span class="chip ${s.cls}">${s.t}</span>
+        </button>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
+    </div>
+    <p class="note">${pend} ensaio(s) ainda não exportado(s). Os dados ficam guardados só neste aparelho até você exportar.</p>`;
+  $("#nDens").onclick=()=>novo("densidade");
+  $("#nBenk").onclick=()=>novo("benkelman");
+  if($("#limparEx")) $("#limparEx").onclick=()=>{DB.ensaios=DB.ensaios.filter(e=>!e.exemplo);try{localStorage.setItem(CHAVE+"-semexemplo","1")}catch(e){};salvar();render();};
+  document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filtro=b.dataset.f;render();});
+  document.querySelectorAll(".item").forEach(b=>b.onclick=()=>{const e=DB.ensaios.find(x=>x.id===b.dataset.id);ir(e.tipo==="densidade"?"dens":"benk",e.id);});
+  setBar([{t:"Exportar para o PC",cls:"primary",f:()=>ir("exportar")}]);
+}
+
+/* ================= Campos comuns ================= */
+function opts(lista,sel,vazio){return (vazio?`<option value="">${vazio}</option>`:"")+lista.map(o=>`<option${o===sel?" selected":""}>${esc(o)}</option>`).join("")+(sel&&!lista.includes(sel)?`<option selected>${esc(sel)}</option>`:"");}
+function campo(id,rot,val,extra=""){return `<label class="f ${extra.includes("full")?"full":""}">${rot}<input id="${id}" value="${esc(val)}" ${extra.replace("full","")}></label>`;}
+function campoNum(id,rot,val,un){return `<label class="f">${rot}${un?` <span class="u">(${un})</span>`:""}<input id="${id}" class="num" inputmode="decimal" value="${esc(val)}"></label>`;}
+function cabecalhoComum(e){
+  return `
+    <div class="grid g3">
+      ${campo("c_registro","Registro (R)",e.registro,'inputmode="numeric"')}
+      <label class="f">Data<input id="c_data" type="date" value="${esc(e.data)}"></label>
+      <label class="f full">Rua<select id="c_rua">${opts(DB.cad.ruas.map(r=>r.nome),e.rua,"Escolha a rua")}</select></label>
+      ${campo("c_segmento","Segmento (estacas)",e.segmento,'placeholder="804+00 a 808+10" full')}
+      <label class="f">Camada<select id="c_camada">${opts(CAMADAS,e.camada,"Escolha")}</select></label>
+      <label class="f">Material<select id="c_material">${opts(DB.cad.materiais.map(m=>m.nome),e.material,"Escolha")}</select></label>
+      ${campo("c_procedencia","Procedência",e.procedencia)}
+      <label class="f">Empreiteira<input id="c_empreiteira" list="dl_emp" value="${esc(e.empreiteira)}"><datalist id="dl_emp">${DB.cad.empreiteiras.map(x=>`<option value="${esc(x)}">`).join("")}</datalist></label>
+    </div>`;
+}
+function ligarComuns(e,aoMudar){
+  const map={c_registro:"registro",c_data:"data",c_rua:"rua",c_segmento:"segmento",c_camada:"camada",c_material:"material",c_procedencia:"procedencia",c_empreiteira:"empreiteira"};
+  Object.entries(map).forEach(([id,k])=>{const el=document.getElementById(id);if(!el)return;el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{e[k]=el.value;
+    if(k==="material"){const m=material(el.value);if(m){e.procedencia=m.procedencia||e.procedencia;$("#c_procedencia").value=e.procedencia;
+      if(e.tipo==="densidade"){["otima","densLab","densReal"].forEach(x=>{if(m[x]!==""&&m[x]!=null){e[x]=fmtIn(m[x]);const i=document.getElementById("c_"+x);if(i)i.value=e[x];}});}}}
+    if(e.status==="exportado")e.status="alterado";salvar();aoMudar&&aoMudar(k);});});
+}
+function rodapeEnsaio(e){
+  return `<section class="card">
+      <label class="f">Observação<textarea id="c_obs" rows="2">${esc(e.obs)}</textarea></label>
+      <label class="f">Laboratorista<input id="c_lab" value="${esc(e.laboratorista||"")}"></label>
+      ${confirmando===e.id?`<div class="confirm"><b>Apagar este ensaio do aparelho?</b><span class="note">Se ainda não foi exportado, os dados se perdem.</span>
+        <div class="row"><button class="btn danger" type="button" id="apSim">Apagar</button><button class="btn" type="button" id="apNao">Cancelar</button></div></div>`
+        :`<div><button class="btn danger small" type="button" id="apagar">Apagar ensaio</button></div>`}
+    </section>`;
+}
+function ligarRodape(e){
+  $("#c_obs").oninput=ev=>{e.obs=ev.target.value;salvar();};
+  $("#c_lab").oninput=ev=>{e.laboratorista=ev.target.value;DB.cad.cfg.laboratorista=ev.target.value;salvar();};
+  if($("#apagar"))$("#apagar").onclick=()=>{confirmando=e.id;render();};
+  if($("#apSim"))$("#apSim").onclick=()=>{DB.ensaios=DB.ensaios.filter(x=>x.id!==e.id);salvar();toast("Ensaio apagado");ir("lista");};
+  if($("#apNao"))$("#apNao").onclick=()=>{confirmando=null;render();};
+}
+
+/* ================= Tela: densidade in situ ================= */
+function telaDens(id){
+  const e=DB.ensaios.find(x=>x.id===id);if(!e)return ir("lista");
+  $("#titulo").textContent=`Densidade in situ · R${e.registro||"?"}`;
+  $("#app").innerHTML=`
+    <h2>Identificação</h2>
+    <section class="card">${cabecalhoComum(e)}</section>
+    <h2>Constantes do ensaio</h2>
+    <section class="card">
+      <div class="grid g3">
+        ${campoNum("c_otima","Umidade ótima",e.otima,"%")}
+        ${campoNum("c_densLab","Densidade máx. lab.",e.densLab,"kg/m³")}
+        ${campoNum("c_densReal","Densidade real",e.densReal,"kg/m³")}
+        ${campoNum("c_areiaCone","Peso da areia no cone",e.areiaCone,"g")}
+        ${campoNum("c_densAreia","Densidade da areia",e.densAreia,"kg/m³")}
+      </div>
+      <p class="note">Critérios: GC ≥ 100% e umidade entre −2% e +1% da ótima.</p>
+    </section>
+    <h2>Furos</h2>
+    <div class="list" id="furos"></div>
+    <div><button class="btn" type="button" id="addFuro">+ Adicionar furo</button></div>
+    ${rodapeEnsaio(e)}`;
+  ligarComuns(e,()=>{$("#titulo").textContent=`Densidade in situ · R${e.registro||"?"}`;desenharFuros(e);});
+  ["otima","densLab","densReal","areiaCone","densAreia"].forEach(k=>{$("#c_"+k).oninput=ev=>{e[k]=ev.target.value;tocou(e);
+    if(k==="densLab"||k==="densReal"||k==="otima"){const m=material(e.material);if(m){m[k]=ev.target.value;}}
+    if(k==="areiaCone"||k==="densAreia")DB.cad.cfg[k]=ev.target.value;
+    salvar();atualizarCalcs(e);};});
+  $("#addFuro").onclick=()=>{const u=e.furos[e.furos.length-1]||{};const f=novoFuro();f.altura=u.altura||"";e.furos.push(f);tocou(e);salvar();desenharFuros(e);
+    const cards=document.querySelectorAll(".furo");cards[cards.length-1].scrollIntoView({behavior:"smooth",block:"start"});};
+  ligarRodape(e);
+  desenharFuros(e);
+  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
+}
+function tocou(e){if(e.status==="exportado")e.status="alterado";}
+function desenharFuros(e){
+  const box=$("#furos");
+  box.innerHTML=e.furos.map((f,i)=>`
+    <section class="card furo" data-i="${i}">
+      <div class="furo-h"><b>Furo ${i+1}</b>${e.furos.length>1?`<button class="btn small danger" type="button" data-rm="${i}">Remover</button>`:""}</div>
+      <div class="grid">
+        <label class="f">Estaca<input data-k="estaca" value="${esc(f.estaca)}" placeholder="807+00" inputmode="text"></label>
+        <label class="f">Altura da camada <span class="u">(cm)</span><input data-k="altura" class="num" inputmode="decimal" value="${esc(f.altura)}"></label>
+        <div class="full"><div class="seg" role="group" aria-label="Posição do furo">${["LE","Eixo","LD"].map(p=>`<button type="button" data-pos="${p}" aria-pressed="${f.posicao===p}">${p}</button>`).join("")}</div></div>
+        <label class="f">Frasco antes <span class="u">(g)</span><input data-k="antes" class="num" inputmode="decimal" value="${esc(f.antes)}"></label>
+        <label class="f">Frasco depois <span class="u">(g)</span><input data-k="depois" class="num" inputmode="decimal" value="${esc(f.depois)}"></label>
+        <label class="f">Material retirado <span class="u">(g)</span><input data-k="material" class="num" inputmode="decimal" value="${esc(f.material)}"></label>
+        <label class="f">Retido na 3/4" <span class="u">(g, se houver)</span><input data-k="retido" class="num" inputmode="decimal" value="${esc(f.retido)}"></label>
+        <label class="f">Umidade de campo <span class="u">(%)</span><input data-k="umidade" class="num" inputmode="decimal" value="${esc(f.umidade)}"></label>
+      </div>
+      <div class="calc" data-calc="${i}"></div>
+    </section>`).join("");
+  box.querySelectorAll(".furo").forEach(card=>{
+    const i=+card.dataset.i,f=e.furos[i];
+    card.querySelectorAll("input[data-k]").forEach(inp=>inp.oninput=()=>{f[inp.dataset.k]=inp.value;tocou(e);salvar();atualizarCalcs(e);});
+    card.querySelectorAll("[data-pos]").forEach(b=>b.onclick=()=>{f.posicao=b.dataset.pos;tocou(e);salvar();card.querySelectorAll("[data-pos]").forEach(x=>x.setAttribute("aria-pressed",x===b));});
+    const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.furos.splice(i,1);tocou(e);salvar();desenharFuros(e);};
+  });
+  atualizarCalcs(e);
+}
+function atualizarCalcs(e){
+  e.furos.forEach((f,i)=>{
+    const el=document.querySelector(`[data-calc="${i}"]`);if(!el)return;
+    const c=calcFuro(e,f);
+    const gcChip=c.gcOk==null?'<span class="chip neutral">–</span>':`<span class="chip ${c.gcOk?"ok":"bad"}">${c.gcOk?"OK":"VERIF."}</span>`;
+    const hChip=c.hOk==null?'<span class="chip neutral">–</span>':`<span class="chip ${c.hOk?"ok":"bad"}">${(c.dh>=0?"+":"")+fmt(c.dh,1)}%</span>`;
+    el.innerHTML=`<div>Areia na cavidade<b>${fmt(c.areiaCav,0)} g</b></div>
+      <div>Dens. úmida<b>${fmt(c.dUmida,0)}</b></div>
+      <div>Dens. seca<b>${fmt(c.dSeca,0)}</b></div>
+      <div>Grau de compactação<b>${fmt(c.gc,1)}% ${gcChip}</b></div>
+      <div>Umidade × ótima<b>${hChip}</b></div>`;
+  });
+}
+
+/* ================= Tela: Viga Benkelman ================= */
+let ladoAtual="LE";
+function telaBenk(id){
+  const e=DB.ensaios.find(x=>x.id===id);if(!e)return ir("lista");
+  $("#titulo").textContent=`Viga Benkelman · R${e.registro||"?"}`;
+  $("#app").innerHTML=`
+    <h2>Identificação</h2>
+    <section class="card">${cabecalhoComum(e)}</section>
+    <h2>Viga e critério</h2>
+    <section class="card">
+      <div class="grid g3">
+        ${campoNum("c_k","Constante K da viga",e.k,"")}
+        <label class="f">Nº N da rua<input id="c_N" disabled value=""></label>
+        ${campoNum("c_adm","Deflexão admissível",e.admManual,"0,01 mm")}
+      </div>
+      <p class="note" id="admNota"></p>
+    </section>
+    <h2>Leituras do extensômetro</h2>
+    <section class="card">
+      <div class="seg" role="group" aria-label="Lado">${[["LE","Lado esquerdo"],["EIXO","Eixo"],["LD","Lado direito"]].map(([k,t])=>`<button type="button" data-lado="${k}" aria-pressed="${ladoAtual===k}">${t} <span id="n_${k}"></span></button>`).join("")}</div>
+      <div class="tblwrap"><table class="lt"><thead><tr><th style="width:32%">Estaca</th><th>L i</th><th class="l25">L 25</th><th>L f</th><th style="text-align:right">D</th><th style="width:40px"></th></tr></thead><tbody id="leit"></tbody></table></div>
+      <div class="row"><button class="btn" type="button" id="addLeit">+ Próxima estaca</button><span class="note grow">D = (L i − L f) × K, em 0,01 mm. A coluna L 25 aparece com o celular deitado.</span></div>
+    </section>
+    <h2>Resultado</h2>
+    <section class="card" id="resBenk"></section>
+    ${rodapeEnsaio(e)}`;
+  ligarComuns(e,k=>{$("#titulo").textContent=`Viga Benkelman · R${e.registro||"?"}`;atualizarBenk(e);});
+  $("#c_k").oninput=ev=>{e.k=ev.target.value;DB.cad.cfg.kViga=ev.target.value;tocou(e);salvar();desenharLeit(e);};
+  $("#c_adm").oninput=ev=>{e.admManual=ev.target.value;tocou(e);salvar();atualizarBenk(e);};
+  document.querySelectorAll("[data-lado]").forEach(b=>b.onclick=()=>{ladoAtual=b.dataset.lado;document.querySelectorAll("[data-lado]").forEach(x=>x.setAttribute("aria-pressed",x===b));desenharLeit(e);});
+  $("#addLeit").onclick=()=>{const L=e.leituras[ladoAtual];const u=L[L.length-1];
+    L.push({estaca:proxEstaca(L)||(e.segmento||"").split(/\s*(?:a|á|à|-)\s*/i)[0]||"",li:u?u.li:fmtIn(DB.cad.cfg.li),l25:"",lf:""});
+    tocou(e);salvar();desenharLeit(e);const ins=document.querySelectorAll('#leit input[data-k="lf"]');ins[ins.length-1].focus();};
+  ligarRodape(e);
+  desenharLeit(e);
+  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
+}
+function desenharLeit(e){
+  const L=e.leituras[ladoAtual];
+  $("#leit").innerHTML=L.length?L.map((l,i)=>`<tr data-i="${i}">
+      <td><input data-k="estaca" value="${esc(l.estaca)}" aria-label="Estaca"></td>
+      <td><input data-k="li" class="num" inputmode="decimal" value="${esc(l.li)}" aria-label="Leitura inicial"></td>
+      <td class="l25"><input data-k="l25" class="num" inputmode="decimal" value="${esc(l.l25)}" aria-label="Leitura a 25 cm"></td>
+      <td><input data-k="lf" class="num" inputmode="decimal" value="${esc(l.lf)}" aria-label="Leitura final"></td>
+      <td class="d" data-d="${i}"></td>
+      <td><button class="btn small" type="button" data-rm="${i}" aria-label="Remover linha">×</button></td></tr>`).join("")
+    :`<tr><td colspan="6"><div class="empty">Sem leituras neste lado. Toque em “+ Próxima estaca”.</div></td></tr>`;
+  $("#leit").querySelectorAll("tr[data-i]").forEach(tr=>{const i=+tr.dataset.i,l=L[i];
+    tr.querySelectorAll("input").forEach(inp=>inp.oninput=()=>{l[inp.dataset.k]=inp.value;tocou(e);salvar();atualizarBenk(e);});
+    tr.querySelector("[data-rm]").onclick=()=>{L.splice(i,1);tocou(e);salvar();desenharLeit(e);};});
+  atualizarBenk(e);
+}
+function atualizarBenk(e){
+  const N=ruaN(e.rua),adm=admBenk(e),auto=admissivel(N,e.camada);
+  $("#c_N").value=ok(N)?nomeN(N):"rua sem N";
+  $("#c_adm").placeholder=ok(auto)?String(auto):"–";
+  $("#admNota").textContent=ok(num(e.admManual))?`Usando o valor digitado (${fmt(adm,0)}). A tabela do projeto daria ${ok(auto)?fmt(auto,0):"–"}. Apague o campo para voltar ao valor da tabela.`
+    :ok(auto)?`Valor da tabela do projeto (Quadro 50) para ${e.camada} com N = ${nomeN(N)}.`:"Escolha a rua e a camada para buscar a deflexão admissível, ou digite o valor.";
+  const L=e.leituras[ladoAtual];
+  L.forEach((l,i)=>{const td=document.querySelector(`[data-d="${i}"]`);if(!td)return;const d=calcLeit(e,l);
+    td.textContent=ok(d)?fmt(d,0):"–";td.style.color=ok(d)&&ok(adm)?(d>adm?"var(--bad)":"var(--ok)"):"";});
+  ["LE","EIXO","LD"].forEach(s=>{const n=e.leituras[s].length;$("#n_"+s).textContent=n?`(${n})`:"";});
+  const r=resumoBenk(e);
+  $("#resBenk").innerHTML=r.n?`
+    <div class="calc">
+      <div>Pontos lidos<b>${r.n}</b></div><div>Média<b>${fmt(r.media,1)}</b></div>
+      <div>Desvio padrão<b>${fmt(r.dp,1)}</b></div><div>Máxima<b>${fmt(r.max,0)}</b></div>
+      <div>Dc = média + desvio<b>${fmt(r.dc,1)}</b></div><div>Admissível<b>${fmt(r.adm,0)}</b></div>
+    </div>
+    <div class="stat">${ok(r.adm)?(r.acima?`<span class="chip bad">${r.acima} ponto(s) acima do admissível</span>`:`<span class="chip ok">Todos os pontos ≤ admissível</span>`)
+      +(r.dc<=r.adm?`<span class="chip ok">Dc OK</span>`:`<span class="chip bad">Dc acima do admissível</span>`):`<span class="chip warn">Sem deflexão admissível</span>`}</div>
+    <p class="note">No Resumo, cada estaca é aceita quando LE, eixo e LD ficam todos abaixo do admissível.</p>`
+    :`<div class="empty">Os resultados aparecem aqui conforme as leituras forem digitadas.</div>`;
+}
+
+/* ================= Tela: cadastros ================= */
+function telaCad(){
+  $("#titulo").textContent="Cadastros";
+  const c=DB.cad;
+  $("#app").innerHTML=`
+    <p class="note">Estes cadastros ficam no aparelho e preenchem os ensaios novos. Os valores iniciais vieram da planilha 2611 - Resumo Ensaios Trincheira.</p>
+    <h2>Ruas e Número N</h2>
+    <section class="card"><div class="tblwrap"><table class="lt"><thead><tr><th>Rua</th><th>N</th><th></th></tr></thead><tbody>
+      ${c.ruas.map((r,i)=>`<tr><td><input data-rua="${i}" data-k="nome" value="${esc(r.nome)}"></td>
+        <td style="width:34%"><select data-rua="${i}" data-k="N">${Object.keys(TAB_ADM).map(n=>`<option value="${n}"${+n===r.N?" selected":""}>${nomeN(+n)}</option>`).join("")}</select></td>
+        <td><button class="btn small" type="button" data-rmrua="${i}" aria-label="Remover rua">×</button></td></tr>`).join("")}
+    </tbody></table></div><div><button class="btn small" type="button" id="addRua">+ Rua</button></div>
+    <p class="note">Ruas com N = 1×10⁸ usam a linha 5×10⁷ da tabela, como no Resumo.</p></section>
+    <h2>Materiais</h2>
+    <section class="card"><div class="tblwrap"><table class="lt" style="min-width:520px"><thead><tr><th>Material</th><th>Procedência</th><th>Ótima %</th><th>Dens. lab.</th><th>Dens. real</th><th></th></tr></thead><tbody>
+      ${c.materiais.map((m,i)=>`<tr>${["nome","procedencia","otima","densLab","densReal"].map(k=>`<td><input data-mat="${i}" data-k="${k}" ${k==="nome"||k==="procedencia"?"":'class="num" inputmode="decimal"'} value="${esc(fmtIn(m[k]))}"></td>`).join("")}
+        <td><button class="btn small" type="button" data-rmmat="${i}" aria-label="Remover material">×</button></td></tr>`).join("")}
+    </tbody></table></div><div><button class="btn small" type="button" id="addMat">+ Material</button></div></section>
+    <h2>Padrões</h2>
+    <section class="card"><div class="grid">
+      ${campoNum("p_areiaCone","Peso da areia no cone",fmtIn(c.cfg.areiaCone),"g")}
+      ${campoNum("p_densAreia","Densidade da areia",fmtIn(c.cfg.densAreia),"kg/m³")}
+      ${campoNum("p_kViga","K da viga",fmtIn(c.cfg.kViga),"")}
+      ${campoNum("p_li","Leitura inicial padrão",fmtIn(c.cfg.li),"")}
+      <label class="f full">Empreiteiras <span class="u">(separe por vírgula)</span><input id="p_emp" value="${esc(c.empreiteiras.join(", "))}"></label>
+    </div></section>
+    <h2>Restaurar</h2>
+    <section class="card"><p class="note">Volta ruas, materiais e padrões aos valores iniciais. Os ensaios não são apagados.</p>
+      ${confirmando==="cad"?`<div class="row"><button class="btn danger" type="button" id="resSim">Restaurar cadastros</button><button class="btn" type="button" id="resNao">Cancelar</button></div>`
+      :`<div><button class="btn small danger" type="button" id="restaurar">Restaurar valores iniciais</button></div>`}</section>`;
+  document.querySelectorAll("[data-rua]").forEach(el=>el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{const r=c.ruas[+el.dataset.rua];r[el.dataset.k]=el.dataset.k==="N"?+el.value:el.value;salvar();}));
+  document.querySelectorAll("[data-rmrua]").forEach(b=>b.onclick=()=>{c.ruas.splice(+b.dataset.rmrua,1);salvar();render();});
+  $("#addRua").onclick=()=>{c.ruas.push({nome:"",N:2e7});salvar();render();};
+  document.querySelectorAll("[data-mat]").forEach(el=>el.oninput=()=>{c.materiais[+el.dataset.mat][el.dataset.k]=el.value;salvar();});
+  document.querySelectorAll("[data-rmmat]").forEach(b=>b.onclick=()=>{c.materiais.splice(+b.dataset.rmmat,1);salvar();render();});
+  $("#addMat").onclick=()=>{c.materiais.push({nome:"",procedencia:"",otima:"",densLab:"",densReal:""});salvar();render();};
+  [["p_areiaCone","areiaCone"],["p_densAreia","densAreia"],["p_kViga","kViga"],["p_li","li"]].forEach(([id,k])=>$("#"+id).oninput=ev=>{c.cfg[k]=ev.target.value;salvar();});
+  $("#p_emp").oninput=ev=>{c.empreiteiras=ev.target.value.split(",").map(s=>s.trim()).filter(Boolean);salvar();};
+  if($("#restaurar"))$("#restaurar").onclick=()=>{confirmando="cad";render();};
+  if($("#resNao"))$("#resNao").onclick=()=>{confirmando=null;render();};
+  if($("#resSim"))$("#resSim").onclick=()=>{DB.cad=JSON.parse(JSON.stringify(PADRAO));salvar();confirmando=null;toast("Cadastros restaurados");render();};
+  setBar(null);
+}
+
+/* ================= Exportação ================= */
+function n2(v){const n=num(v);return ok(n)?n:null;}
+function pacote(lista){
+  return {app:"ensaios-campo-trincheira",versao:1,exportado:new Date().toISOString(),
+    ensaios:lista.map(e=>{
+      const N=ruaN(e.rua);
+      const base={id:e.id,tipo:e.tipo,registro:e.registro,data:e.data,rua:e.rua,N:ok(N)?N:null,segmento:e.segmento,camada:e.camada,material:e.material,
+        procedencia:e.procedencia,empreiteira:e.empreiteira,laboratorista:e.laboratorista||"",obs:e.obs||""};
+      if(e.tipo==="densidade"){
+        Object.assign(base,{otima:n2(e.otima),densLab:n2(e.densLab),densReal:n2(e.densReal),areiaCone:n2(e.areiaCone),densAreia:n2(e.densAreia),
+          furos:e.furos.map(f=>{const c=calcFuro(e,f);return {estaca:f.estaca,posicao:f.posicao,altura:n2(f.altura),antes:n2(f.antes),depois:n2(f.depois),
+            material:n2(f.material),retido:n2(f.retido),umidade:n2(f.umidade),
+            calc:{densUmida:ok(c.dUmida)?+c.dUmida.toFixed(1):null,densSeca:ok(c.dSeca)?+c.dSeca.toFixed(1):null,gc:ok(c.gc)?+c.gc.toFixed(2):null,
+              gcOk:c.gcOk,umidadeOk:c.hOk}};})});
+      } else {
+        const r=resumoBenk(e);
+        const lado=s=>e.leituras[s].map(l=>({estaca:l.estaca,li:n2(l.li),l25:n2(l.l25),lf:n2(l.lf),deflexao:ok(calcLeit(e,l))?calcLeit(e,l):null}));
+        Object.assign(base,{k:n2(e.k),admissivel:ok(r.adm)?r.adm:null,admManual:ok(num(e.admManual)),
+          leituras:{LE:lado("LE"),EIXO:lado("EIXO"),LD:lado("LD")},
+          resumo:{pontos:r.n,media:ok(r.media)?+r.media.toFixed(2):null,desvio:ok(r.dp)?+r.dp.toFixed(2):null,dc:ok(r.dc)?+r.dc.toFixed(2):null,acimaAdm:r.acima}});
+      }
+      return base;})};
+}
+function aammdd(){const d=new Date();return String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");}
+function telaExport(){
+  $("#titulo").textContent="Exportar para o PC";
+  const reais=DB.ensaios.filter(e=>!e.exemplo);
+  const pend=reais.filter(e=>e.status!=="exportado");
+  const sel=pend.length?pend:reais;
+  const json=JSON.stringify(pacote(sel),null,1);
+  const nome=`${aammdd()} - ensaios campo.json`;
+  $("#app").innerHTML=`
+    <section class="card">
+      <b>${sel.length} ensaio(s) no arquivo</b>
+      <span class="note">${pend.length?"Vão só os ensaios ainda não exportados (ou alterados depois).":"Todos já foram exportados; o arquivo leva todos de novo."} Os exemplos não entram.</span>
+      <div class="list">${sel.map(e=>`<div class="row"><span class="item tag" style="width:auto;padding:4px 8px;cursor:default">${e.tipo==="densidade"?"DENS":"VIGA"} R${esc(e.registro)}</span><span class="grow">${esc(e.rua)} · ${dataBR(e.data)}</span></div>`).join("")||'<div class="empty">Nenhum ensaio para exportar.</div>'}</div>
+    </section>
+    <section class="card">
+      <b>Como levar para o PC</b>
+      <span class="note">Salve o arquivo <b>${esc(nome)}</b> na pasta do lançador no Drive (ou mande por WhatsApp/e-mail para você mesmo). No PC, dê dois cliques em LANCAR ENSAIOS.bat.</span>
+      <div class="row">
+        <button class="btn primary grow" type="button" id="exBaixar">Salvar arquivo</button>
+        <button class="btn grow" type="button" id="exShare">Compartilhar</button>
+        <button class="btn grow" type="button" id="exCopiar">Copiar texto</button>
+      </div>
+      <textarea class="exp" id="exTxt" readonly aria-label="Conteúdo do arquivo">${esc(json)}</textarea>
+      <button class="btn" type="button" id="exMarcar">Marcar como exportados</button>
+    </section>`;
+  const marcar=()=>{sel.forEach(e=>e.status="exportado");salvar();};
+  $("#exBaixar").onclick=()=>{try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));a.download=nome;document.body.appendChild(a);a.click();a.remove();marcar();toast("Arquivo salvo em Downloads");}catch(err){toast("Não foi possível salvar. Use Copiar texto.");}};
+  $("#exShare").onclick=async()=>{try{const f=new File([json],nome,{type:"application/json"});
+      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:nome});marcar();toast("Compartilhado");}
+      else{await navigator.share({title:nome,text:json});marcar();toast("Compartilhado");}}catch(err){if(err&&err.name!=="AbortError")toast("Compartilhar não está disponível aqui. Use Salvar ou Copiar.");}};
+  $("#exCopiar").onclick=()=>{const t=$("#exTxt");navigator.clipboard?.writeText(json).then(()=>toast("Texto copiado"),()=>{t.select();toast("Selecionado: use Copiar do teclado");})??(t.select(),toast("Selecionado: use Copiar do teclado"));};
+  $("#exMarcar").onclick=()=>{marcar();toast("Marcados como exportados");ir("lista");};
+  setBar(null);
+}
+
+/* ================= Início ================= */
+render();
+if("serviceWorker" in navigator && location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(()=>{});}
+</script>
+</body>
+</html>
