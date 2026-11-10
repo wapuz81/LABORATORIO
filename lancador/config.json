@@ -23,5 +23,10 @@
   "materialNoResumo": {
     "Brita 4A": "4A",
     "BGS Cotragon": "BGS"
-  }
+  },
+  "fichasTaxa": {
+    "EAI": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\EAI.xlsx",
+    "RR-1C": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\RR1C.xlsx"
+  },
+  "fichaConcreto": "T:\\Meu Drive\\000 - CC\\2.LABORATORIO\\2. PLANILHAS DE LABORATORIO\\PLANILHAS\\CAMPO\\CONCRETO.xlsx"
 }

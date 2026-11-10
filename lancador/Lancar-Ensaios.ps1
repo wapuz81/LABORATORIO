@@ -269,6 +269,127 @@ try {
         }
         Log "OK  $rot -> aba '$nome' + $(@($estacas).Count) linha(s) no Resumo (Viga. Benk)"
       }
+      elseif ($e.tipo -eq "concreto") {
+        # ===== Moldagem de concreto: uma aba por série =====
+        $orig = $cfg.fichaConcreto
+        if (-not $orig) { throw "ficha de concreto não configurada (config.json, fichaConcreto)" }
+        $wb = Abrir (Destino $orig)
+        $nome = NomeAba $wb ("SÉRIE $($e.registro)-$("$($e.elemento)".ToUpper())")
+        if (-not $nome) { throw "a ficha já tem uma aba com esse nome (série lançada à mão?)" }
+        $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $modelo.Copy($M, $modelo)
+        $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $ws.Name = $nome
+        $ws.Range("B12:I26").ClearContents() | Out-Null
+        $ws.Range("K12:Q26").ClearContents() | Out-Null
+        $ws.Range("J12").Formula = '=IF(I12="","",I12-F12)'
+        Escreve $ws "J4" ("$($e.concreteira)".ToUpper())
+        Escreve $ws "P4" (DataOA $e.data)
+        if ($e.rua) { Escreve $ws "C5" ("RUA: " + "$($e.rua)".ToUpper()) }
+        Escreve $ws "AE4" $e.fck
+        Escreve $ws "G8" $e.fck
+        Escreve $ws "L7" $e.cimento
+        Escreve $ws "B12" (NumOuTexto "$($e.registro)")
+        Escreve $ws "C12" $e.cps
+        Escreve $ws "D12" $e.slump
+        Escreve $ws "E12" $e.nf
+        foreach ($par in @(@("F12","hDosagem"), @("G12","hChegada"), @("H12","hInicio"), @("I12","hTermino"))) {
+          $h = "$($e.($par[1]))"
+          if ($h -match '^(\d{1,2}):(\d{2})') { $ws.Range($par[0]).Value2 = [double](([int]$matches[1] * 60 + [int]$matches[2]) / 1440.0) }
+        }
+        Escreve $ws "K12" $e.volume
+        Escreve $ws "L12" $e.acumulado
+        Escreve $ws "M12" ("$($e.placa)".ToUpper())
+        $elem = "$($e.elemento)".ToUpper(); if ($e.lado -and $e.lado -ne "–") { $elem = "$elem - $("$($e.lado)".ToUpper())" }
+        Escreve $ws "N12" $elem
+        Escreve $ws "Q12" $e.idades
+        Escreve $ws "N30" ("$($e.moldador)".ToUpper())
+        if ($e.obs) { Escreve $ws "B29" ("OBSERVAÇÃO: " + $e.obs) }
+        # ===== resumo: aba Concreto =====
+        if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
+        $wr = $wbRes.Worksheets.Item("Concreto")
+        $r = NovaLinha $wr 1
+        LimpaDados $wr $r @("A","B","C","D","E","F","G","H","I","J","K","M","N","Q","R")
+        FormulasDe $wr 6 $r
+        Escreve $wr "A$r" (NumOuTexto "$($e.registro)")
+        Escreve $wr "B$r" (DataOA $e.data)
+        $wr.Range("B$r").NumberFormatLocal = "dd/mm/aa"
+        Escreve $wr "C$r" $(if ($e.local) { $e.local } else { Rua $e })
+        Escreve $wr "E$r" $e.elemento
+        if ($e.lado -and $e.lado -ne "–") { Escreve $wr "F$r" $e.lado }
+        Escreve $wr "G$r" $e.slump
+        Escreve $wr "H$r" "10 X 20"
+        Escreve $wr "I$r" "Compressão"
+        Escreve $wr "J$r" $e.estrutura
+        Escreve $wr "K$r" $e.fck
+        Log "OK  $rot -> aba '$nome' + linha $r no Resumo (Concreto)"
+      }
+      elseif ($e.tipo -eq "taxa") {
+        # ===== Imprimação (EAI) / Pintura de ligação (RR-1C) =====
+        $orig = MapaCfg "fichasTaxa" $e.emulsao
+        if (-not $orig) { throw "sem ficha configurada para a emulsão '$($e.emulsao)' (config.json, fichasTaxa)" }
+        $bands = @($e.bandejas)
+        if ($bands.Count -gt 5) { throw "a ficha tem 5 linhas e o ensaio tem $($bands.Count) bandejas" }
+        $wb = Abrir (Destino $orig)
+        $pref = if ($e.emulsao -eq "RR-1C") { "RR1C" } else { "EAI" }
+        $nome = NomeAba $wb ("$pref-R$($e.registro)-$("$($e.camada)".ToUpper().Replace(' - ', ' '))-$("$($e.rua)".ToUpper())")
+        if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
+        $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $modelo.Copy($M, $modelo)
+        $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $ws.Name = $nome
+        $ws.Range("A11:G15").ClearContents() | Out-Null
+        $ws.Range("I11:I15").ClearContents() | Out-Null
+        $ws.Range("G4").NumberFormat = "@"
+        Escreve $ws "G4" ([string]$e.registro)
+        Escreve $ws "B5" ("RUA: " + "$($e.rua)".ToUpper())
+        Escreve $ws "G5" ("$($e.camada)".ToUpper())
+        Escreve $ws "B6" $e.segmento
+        Escreve $ws "G6" $pref
+        Escreve $ws "B7" ("$($e.empreiteira)".ToUpper())
+        if ($null -ne $e.proj -and $null -ne $e.tolerancia) {
+          Escreve $ws "G7" (("{0:0.0#} A {1:0.0#}" -f ([double]$e.proj - [double]$e.tolerancia), ([double]$e.proj + [double]$e.tolerancia)) -replace '\.', ',')
+        }
+        $seg = if ($e.segmento) { "$($e.segmento)" } else { "-" }
+        $l = 11
+        foreach ($b in $bands) {
+          Escreve $ws "A$l" (DataOA $e.data)
+          Escreve $ws "B$l" $seg
+          Escreve $ws "C$l" $b.estaca
+          Escreve $ws "D$l" ("$($b.posicao)".ToUpper())
+          Escreve $ws "E$l" $b.temp
+          Escreve $ws "F$l" $b.bandeja
+          Escreve $ws "G$l" $b.total
+          Escreve $ws "I$l" $b.area
+          $l++
+        }
+        if ($e.obs) { Escreve $ws "A27" ("OBSERVAÇÃO: " + $e.obs) }
+        $xl.Calculate()
+        # ===== resumo: aba Imprimação ou P. Ligação =====
+        if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
+        $aba = if ($e.emulsao -eq "RR-1C") { "P. Ligação" } else { "Imprimação" }
+        $wr = $wbRes.Worksheets.Item($aba)
+        $i = 0
+        foreach ($b in $bands) {
+          $i++
+          $tx = $ws.Range("J$(10 + $i)").Value2
+          $r = NovaLinha $wr 4
+          LimpaDados $wr $r @("A","B","C","D","E","F","G","H","I")
+          FormulasDe $wr 6 $r
+          $reg = if ("$($e.registro)" -match '\.') { "$($e.registro)" } else { "$($e.registro).$i" }
+          $wr.Range("A$r").NumberFormat = "@"
+          Escreve $wr "A$r" ([string]$reg)
+          Escreve $wr "B$r" (DataOA $e.data)
+          $wr.Range("B$r").NumberFormatLocal = "dd/mm/aa"
+          Escreve $wr "C$r" (Rua $e)
+          Escreve $wr "D$r" ($b.estaca)
+          Escreve $wr "E$r" ($e.emulsao)
+          Escreve $wr "F$r" ($e.camada)
+          if ($tx -is [double]) { $wr.Range("G$r").Value2 = [math]::Round($tx, 2) }
+          if (-not $wr.Range("H$r").HasFormula -and $null -ne $e.proj) { Escreve $wr "H$r" ([double]$e.proj) }
+        }
+        Log "OK  $rot -> aba '$nome' + $($bands.Count) linha(s) no Resumo ($aba)"
+      }
       else { throw "tipo de ensaio desconhecido: $($e.tipo)" }
       $lancados += [pscustomobject]@{ id = $e.id; tipo = $e.tipo; registro = $e.registro; rua = $e.rua; data = $e.data; lancado = $agora.ToString("yyyy-MM-dd HH:mm"); modo = $modo; arquivo = $e.arquivo }
     }
