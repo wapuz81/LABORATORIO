@@ -1,0 +1,11 @@
+{
+  "name": "Ensaios de Campo - Trincheira São Pedro",
+  "short_name": "Ensaios Campo",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EEF2F6",
+  "theme_color": "#1F4E78",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
