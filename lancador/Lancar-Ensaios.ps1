@@ -6,7 +6,8 @@
 # Modo "teste": trabalha em CÓPIAS dentro de pastaSaidaTeste\aammdd-hhmm\ e não toca nos originais.
 # Modo "gravar": antes de alterar, copia a versão anterior de cada arquivo para a subpasta ANTIGO.
 
-param([string]$Config = (Join-Path $PSScriptRoot "config.json"))
+param([string]$Config = (Join-Path $PSScriptRoot "config.json"), [switch]$SemPausa)
+function Pausa { if (-not $SemPausa) { Read-Host "Enter para fechar" | Out-Null } }
 
 $ErrorActionPreference = "Stop"
 $cfg = Get-Content -Raw -Encoding UTF8 $Config | ConvertFrom-Json
@@ -22,7 +23,7 @@ function MapaCfg($nome, $chave) { $m = Valor $cfg $nome; return (Valor $m $chave
 $entrada = $cfg.pastaEntrada
 if (-not (Test-Path $entrada)) { throw "Pasta de entrada não encontrada: $entrada" }
 $jsons = Get-ChildItem -Path $entrada -Filter *.json -File | Sort-Object Name
-if (-not $jsons) { Log "Nenhum arquivo .json em $entrada. Nada a fazer."; Read-Host "Enter para fechar"; exit }
+if (-not $jsons) { Log "Nenhum arquivo .json em $entrada. Nada a fazer."; Pausa; exit }
 
 $registroLanc = Join-Path $entrada "lancados.csv"
 $jaLancados = @{}
@@ -38,7 +39,7 @@ foreach ($j in $jsons) {
     $ensaios += $e
   }
 }
-if (-not $ensaios) { Log "Todos os ensaios desses arquivos já foram lançados."; Read-Host "Enter para fechar"; exit }
+if (-not $ensaios) { Log "Todos os ensaios desses arquivos já foram lançados."; Pausa; exit }
 
 # ---------- preparar arquivos de destino (cópia de teste ou backup em ANTIGO) ----------
 $modo = if ($cfg.modo) { $cfg.modo.ToLower() } else { "teste" }
@@ -286,4 +287,4 @@ Log ""
 if ($modo -eq "gravar") { Log "Pronto. Arquivos originais atualizados; versões anteriores em ANTIGO." }
 else { Log "Pronto (modo TESTE). Cópias em: $pastaTeste" }
 $log | Set-Content -Encoding UTF8 (Join-Path $(if ($modo -eq "gravar") { $entrada } else { $pastaTeste }) "$carimbo - log lancador.txt")
-Read-Host "Enter para fechar"
+Pausa
