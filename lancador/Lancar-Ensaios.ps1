@@ -65,6 +65,29 @@ function Destino($original) {
 }
 
 # ---------- Excel ----------
+# Filtro de mensagens COM: quando o Excel está ocupado (recalculando o Resumo), o Windows
+# repete a chamada por até 2 minutos em vez de dar RPC_E_CALL_REJECTED.
+if (-not ("FiltroCom" -as [type])) {
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+[ComImport, Guid("00000016-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IOleMessageFilter {
+  [PreserveSig] int HandleInComingCall(int dwCallType, IntPtr hTaskCaller, int dwTickCount, IntPtr lpInterfaceInfo);
+  [PreserveSig] int RetryRejectedCall(IntPtr hTaskCallee, int dwTickCount, int dwRejectType);
+  [PreserveSig] int MessagePending(IntPtr hTaskCallee, int dwTickCount, int dwPendingType);
+}
+public class FiltroCom : IOleMessageFilter {
+  [DllImport("Ole32.dll")] private static extern int CoRegisterMessageFilter(IOleMessageFilter newFilter, out IOleMessageFilter oldFilter);
+  public static void Ligar() { IOleMessageFilter old; CoRegisterMessageFilter(new FiltroCom(), out old); }
+  public static void Desligar() { IOleMessageFilter old; CoRegisterMessageFilter(null, out old); }
+  int IOleMessageFilter.HandleInComingCall(int a, IntPtr b, int c, IntPtr d) { return 0; }
+  int IOleMessageFilter.RetryRejectedCall(IntPtr a, int tick, int tipo) { if (tipo == 2 && tick < 120000) return 200; return -1; }
+  int IOleMessageFilter.MessagePending(IntPtr a, int b, int c) { return 2; }
+}
+"@
+}
+[FiltroCom]::Ligar()
 $xl = New-Object -ComObject Excel.Application
 $xl.Visible = $false
 $xl.DisplayAlerts = $false
@@ -106,8 +129,15 @@ function NovaLinha($ws, $col) {
   return $nova
 }
 # repõe na linha nova as fórmulas da linha de referência (primeira linha de dados da aba)
+# para cada coluna, procura de baixo para cima a última linha que tem fórmula (até a linha de referência)
 function FormulasDe($ws, $linhaRef, $nova) {
-  for ($c = 1; $c -le 26; $c++) { $ref = $ws.Cells($linhaRef, $c); if ($ref.HasFormula) { $ws.Cells($nova, $c).FormulaR1C1 = $ref.FormulaR1C1 } }
+  for ($c = 1; $c -le 26; $c++) {
+    for ($l = $nova - 1; $l -ge $linhaRef; $l--) {
+      $ref = $ws.Cells($l, $c)
+      if ($ref.HasFormula) { $ws.Cells($nova, $c).FormulaR1C1 = $ref.FormulaR1C1; break }
+      if ($null -ne $ref.Value2 -and "$($ref.Value2)" -ne "") { break }   # célula com valor digitado: mantém como está
+    }
+  }
 }
 function NumOuTexto($t) { $d = 0.0; if ([double]::TryParse(($t -replace ',', '.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { return $d } else { return $t } }
 function LimpaDados($ws, $linha, $colunas) { foreach ($c in $colunas) { $cel = $ws.Range("$c$linha"); if (-not $cel.HasFormula) { $cel.ClearContents() | Out-Null } } }
@@ -340,6 +370,11 @@ try {
         $ws.Name = $nome
         $ws.Range("A11:G15").ClearContents() | Out-Null
         $ws.Range("I11:I15").ClearContents() | Out-Null
+        # a aba modelo pode não ter as fórmulas em todas as linhas: repõe H e J nas 5
+        for ($l = 11; $l -le 15; $l++) {
+          $ws.Range("H$l").Formula = "=IF(G$l=`"`",`"`",G$l-F$l)"
+          $ws.Range("J$l").Formula = "=IF(B$l=0,`"`",H$l/I$l/1000)"
+        }
         $ws.Range("G4").NumberFormat = "@"
         Escreve $ws "G4" ([string]$e.registro)
         Escreve $ws "B5" ("RUA: " + "$($e.rua)".ToUpper())
@@ -401,6 +436,7 @@ finally {
   foreach ($wb in $abertos.Values) { try { $wb.Close($false) } catch {} }
   $xl.Quit()
   [System.Runtime.InteropServices.Marshal]::ReleaseComObject($xl) | Out-Null
+  [FiltroCom]::Desligar()
 }
 
 # só marca como lançado no modo gravar (no modo teste dá para repetir quantas vezes quiser)
