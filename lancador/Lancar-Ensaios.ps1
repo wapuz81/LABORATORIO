@@ -86,7 +86,13 @@ function NomeAba($wb, $nome) {
   return $n
 }
 function Por($v) { if ($null -eq $v) { return $null } else { return [double]$v } }
-function Escreve($ws, $end, $v) { if ($null -ne $v -and "$v" -ne "") { $ws.Range($end).Value2 = $v } }
+# No PowerShell 5.1 o COM do Excel recusa valores vindos de variável/JSON sem cast explícito
+function Escreve($ws, $end, $v) {
+  if ($null -eq $v -or "$v" -eq "") { return }
+  if ($v -is [string]) { $ws.Range($end).Value2 = [string]$v }
+  elseif ($v -is [ValueType]) { $ws.Range($end).Value2 = [double]$v }
+  else { $ws.Range($end).Value2 = "$v" }
+}
 function EstacaM($s) { if ("$s" -match '^\s*(\d+)\s*\+\s*(\d+(?:[.,]\d+)?)\s*$') { return [double]$matches[1] * 20 + [double]($matches[2] -replace ',', '.') } else { return 1e9 } }
 function UltimaLinha($ws, $col, $min) {
   $r = $ws.Cells($ws.Rows.Count, $col).End(-4162).Row   # xlUp
@@ -143,7 +149,7 @@ try {
         Escreve $ws "R5" $e.densAreia
         $l = 10
         foreach ($f in $furos) {
-          $ws.Range("A$l").Value2 = DataOA $e.data
+          Escreve $ws "A$l" (DataOA $e.data)
           Escreve $ws "B$l" $e.segmento
           Escreve $ws "C$l" $f.estaca
           Escreve $ws "D$l" ("$($f.posicao)".ToUpper())
@@ -151,12 +157,13 @@ try {
           Escreve $ws "F$l" $f.antes
           Escreve $ws "G$l" $f.depois
           Escreve $ws "H$l" $f.material
-          Escreve $ws "I$l" $f.retido
+          # retido vazio vira 0: com I em branco a fórmula N da ficha dá #VALOR!
+          if ($null -ne $f.retido) { Escreve $ws "I$l" $f.retido } else { $ws.Range("I$l").Value2 = [double]0 }
           Escreve $ws "J$l" $e.densLab
           Escreve $ws "Q$l" $f.umidade
           $l++
         }
-        if ($e.obs) { $ws.Range("A18").Value2 = "OBSERVAÇÃO: " + $e.obs }
+        if ($e.obs) { Escreve $ws "A18" ("OBSERVAÇÃO: " + $e.obs) }
         $xl.Calculate()
         # ===== resumo: aba Mat. Granular =====
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
@@ -169,13 +176,13 @@ try {
           LimpaDados $wr $r @("A","B","C","D","E","F","G","H","J","K","N","Q","R","T","U")
           FormulasDe $wr 10 $r
           $reg = if ("$($e.registro)" -match '\.') { "$($e.registro)" } else { "$($e.registro).$i" }
-          $wr.Range("A$r").Value2 = NumOuTexto $reg
-          $wr.Range("B$r").Value2 = DataOA $e.data
-          $wr.Range("C$r").Value2 = Rua $e
-          $wr.Range("D$r").Value2 = $f.estaca
-          $wr.Range("E$r").Value2 = MaterialResumo $e.material
-          $wr.Range("F$r").Value2 = $e.camada
-          $wr.Range("G$r").Value2 = @{ "LE" = "Esquerdo"; "Eixo" = "Eixo"; "LD" = "Direito" }[$f.posicao]
+          Escreve $wr "A$r" (NumOuTexto $reg)
+          Escreve $wr "B$r" (DataOA $e.data)
+          Escreve $wr "C$r" (Rua $e)
+          Escreve $wr "D$r" ($f.estaca)
+          Escreve $wr "E$r" (MaterialResumo $e.material)
+          Escreve $wr "F$r" ($e.camada)
+          Escreve $wr "G$r" (@{ "LE" = "Esquerdo"; "Eixo" = "Eixo"; "LD" = "Direito" }[$f.posicao])
           if ($gc -is [double]) { $wr.Range("H$r").Value2 = [math]::Round($gc / 100, 4) }
           if ($null -ne $f.umidade) { $wr.Range("J$r").Value2 = [math]::Round([double]$f.umidade / 100, 4) }
           # ótima: mantém a fórmula da Proj. Exec.; se o valor usado no campo for outro, grava o do campo
@@ -206,7 +213,7 @@ try {
           $ws.Range("J$l").Formula = "=IF(I$l=`"`",`"`",(G$l-I$l)*H`$6)"
           $ws.Range("O$l").Formula = "=IF(N$l=`"`",`"`",(L$l-N$l)*H`$6)"
         }
-        $ws.Range("H4").Value2 = DataBR $e.data
+        Escreve $ws "H4" (DataBR $e.data)
         Escreve $ws "M4" (NumOuTexto "$($e.registro)")
         Escreve $ws "C5" ("RUA: " + ("$($e.rua)".ToUpper()))
         Escreve $ws "H5" $e.admissivel
@@ -223,7 +230,7 @@ try {
             $c = $cols[$lado]
             Escreve $ws "$($c[0])$l" $p.estaca
             Escreve $ws "$($c[1])$l" $p.li
-            if ($null -ne $p.l25) { $ws.Range("$($c[2])$l").Value2 = $p.l25 } else { $ws.Range("$($c[2])$l").Value2 = "-" }
+            if ($null -ne $p.l25) { Escreve $ws "$($c[2])$l" $p.l25 } else { $ws.Range("$($c[2])$l").Value2 = "-" }
             Escreve $ws "$($c[3])$l" $p.lf
             $l++
           }
@@ -246,14 +253,15 @@ try {
           LimpaDados $wr $r @("A","B","C","D","E","F","G","H","I")
           FormulasDe $wr 6 $r
           if ($prim) {
-            $wr.Range("A$r").Value2 = NumOuTexto "$($e.registro)"
-            $wr.Range("B$r").Value2 = DataOA $e.data
-            $wr.Range("C$r").Value2 = Rua $e
+            Escreve $wr "A$r" (NumOuTexto "$($e.registro)")
+            Escreve $wr "B$r" (DataOA $e.data)
+            $wr.Range("B$r").NumberFormatLocal = "dd/mm/aa"
+            Escreve $wr "C$r" (Rua $e)
             $prim = $false
           }
-          $wr.Range("D$r").Value2 = $est
-          $wr.Range("E$r").Value2 = MaterialResumo $e.material
-          $wr.Range("F$r").Value2 = $e.camada
+          Escreve $wr "D$r" ($est)
+          Escreve $wr "E$r" (MaterialResumo $e.material)
+          Escreve $wr "F$r" ($e.camada)
           $d = $porEstaca[$est]
           if ($d.ContainsKey("LE")) { $wr.Range("G$r").Value2 = [double]$d["LE"] }
           if ($d.ContainsKey("EIXO")) { $wr.Range("H$r").Value2 = [double]$d["EIXO"] }
@@ -264,7 +272,7 @@ try {
       else { throw "tipo de ensaio desconhecido: $($e.tipo)" }
       $lancados += [pscustomobject]@{ id = $e.id; tipo = $e.tipo; registro = $e.registro; rua = $e.rua; data = $e.data; lancado = $agora.ToString("yyyy-MM-dd HH:mm"); modo = $modo; arquivo = $e.arquivo }
     }
-    catch { Log "ERRO $rot -> $($_.Exception.Message)" }
+    catch { Log "ERRO $rot -> $($_.Exception.Message) (linha $($_.InvocationInfo.ScriptLineNumber))" }
   }
   foreach ($wb in $abertos.Values) { $wb.Save() }
 }
