@@ -440,10 +440,11 @@ try {
           $modelo.Copy($M, $modelo)
           $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
           $ws.Name = $nome
-          foreach ($c in @("A8","C8","E8","A9","C9","E9")) { $ws.Range($c).ClearContents() | Out-Null }
-          foreach ($c in @("D8","D9")) { if (-not $ws.Range($c).HasFormula) { $ws.Range($c).ClearContents() | Out-Null } }
-          $ws.Range("C15:C27").ClearContents() | Out-Null
-          $ws.Range("F15:F27").ClearContents() | Out-Null
+          try {
+          # células mescladas (A8:B8, E8:F8...): limpar a mescla inteira
+          foreach ($c in @("A8","C8","E8","A9","C9","E9")) { $ws.Range($c).MergeArea.ClearContents() | Out-Null }
+          foreach ($c in @("D8","D9")) { if (-not $ws.Range($c).HasFormula) { $ws.Range($c).MergeArea.ClearContents() | Out-Null } }
+          for ($l = 15; $l -le 27; $l++) { foreach ($c in @("C","F")) { $ws.Range("$c$l").MergeArea.ClearContents() | Out-Null } }
           Escreve $ws "H2" (NumOuTexto "$($e.registro)")
           Escreve $ws "H3" (DataOA $e.data)
           Escreve $ws "C3" ("Rua " + $e.rua)
@@ -479,6 +480,12 @@ try {
             if ("$($ws.Range("A$l").Value2)" -like "OBSERVA*") { $ws.Range("A$l").Value2 = [string]("OBSERVAÇÃO: " + $(if ($e.obs) { $e.obs } else { "" })); break }
           }
           $xl.Calculate()
+          }
+          catch {
+            # não deixa aba pela metade (senão ela vira o modelo do próximo lançamento)
+            $xl.DisplayAlerts = $false; try { $ws.Delete() | Out-Null } catch {}
+            throw
+          }
         }
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
         $wr = $wbRes.Worksheets.Item("CBUQ Gl Betume")
