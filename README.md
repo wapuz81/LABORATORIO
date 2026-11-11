@@ -15,7 +15,7 @@ vê o resultado na hora e exporta um arquivo `.json` para o PC.
 - **Moldagem de concreto** e **Imprimação / Pintura de ligação (EAI, RR-1C)**: ver telas do app.
 - **CBUQ teor de betume:** ligante = mistura − agregado, teor = ligante / mistura (±0,3% do projeto);
   granulometria por retido acumulado, passante comparado com a Faixa B ou C (mesmos limites do Resumo).
-  O lançador grava a linha na aba `CBUQ Gl Betume` do Resumo (a ficha TEOR BETUME ainda não é preenchida).
+  O lançador grava a linha na aba `CBUQ Gl Betume` do Resumo e cria a aba nova na ficha TEOR DE BETUME da faixa (`fichasBetume` no config.json).
 - **Cadastros:** ruas com o N, materiais com umidade ótima e densidades, padrões (areia, K da viga).
 - Os dados ficam no aparelho (armazenamento do navegador) até serem exportados.
 
