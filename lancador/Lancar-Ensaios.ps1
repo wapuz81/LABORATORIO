@@ -119,17 +119,25 @@ function AbaModelo($wb) {
   return $wb.Worksheets.Item($wb.Worksheets.Count)
 }
 function CopiaAba($wb, $modelo) {
+  # devolve a aba nova (achada pelo nome, não pela posição) e garante que ela fica no fim
+  $antes = @{}; foreach ($s in $wb.Worksheets) { $antes[$s.Name] = $true }
   for ($t = 1; $t -le 3; $t++) {
-    try { $modelo.Copy([Type]::Missing, $wb.Worksheets.Item($wb.Worksheets.Count)); return }
+    try { $modelo.Copy([Type]::Missing, $wb.Worksheets.Item($wb.Worksheets.Count)); break }
     catch {
       if ($t -eq 3) { throw }
       Start-Sleep -Seconds 2
       try { $wb.Activate(); $modelo.Activate() } catch {}
     }
   }
+  $nova = $null
+  foreach ($s in $wb.Worksheets) { if (-not $antes.ContainsKey($s.Name)) { $nova = $s } }
+  if (-not $nova) { throw "a cópia da aba modelo não apareceu na ficha" }
+  if ($nova.Index -ne $wb.Worksheets.Count) {
+    Log "   aviso: a cópia da aba modelo ficou na posição $($nova.Index) de $($wb.Worksheets.Count); movida para o fim"
+    $nova.Move([Type]::Missing, $wb.Worksheets.Item($wb.Worksheets.Count))
+  }
+  return $nova
 }
-# salva e fecha as fichas depois de cada ensaio (o Resumo fica aberto até o fim):
-# com muitas pastas abertas o Excel passa a recusar a cópia de abas
 function FechaFichas() {
   $chaveRes = $destinos[$resumoOrig]
   foreach ($k in @($abertos.Keys)) {
@@ -211,8 +219,7 @@ try {
         $nome = NomeAba $wb ("IN SITU-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
         $modelo = AbaModelo $wb
-        CopiaAba $wb $modelo
-        $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $ws = CopiaAba $wb $modelo
         $ws.Name = $nome
         $ws.Range("A10:J17").ClearContents() | Out-Null
         $ws.Range("Q10:Q17").ClearContents() | Out-Null
@@ -283,8 +290,7 @@ try {
         $nome = NomeAba $wb ("VIGA-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
         $modelo = AbaModelo $wb
-        CopiaAba $wb $modelo
-        $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $ws = CopiaAba $wb $modelo
         $ws.Name = $nome
         foreach ($faixa in "A12:D27","F12:I27","K12:N27") { $ws.Range($faixa).ClearContents() | Out-Null }
         # repõe fórmulas de deflexão que tenham sido digitadas como número na ficha modelo
@@ -357,8 +363,7 @@ try {
         $nome = NomeAba $wb ("SÉRIE $($e.registro)-$("$($e.elemento)".ToUpper())")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (série lançada à mão?)" }
         $modelo = AbaModelo $wb
-        CopiaAba $wb $modelo
-        $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $ws = CopiaAba $wb $modelo
         $ws.Name = $nome
         $ws.Range("B12:I26").ClearContents() | Out-Null
         $ws.Range("K12:Q26").ClearContents() | Out-Null
@@ -415,8 +420,7 @@ try {
         $nome = NomeAba $wb ("$pref-R$($e.registro)-$("$($e.camada)".ToUpper().Replace(' - ', ' '))-$("$($e.rua)".ToUpper())")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
         $modelo = AbaModelo $wb
-        CopiaAba $wb $modelo
-        $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $ws = CopiaAba $wb $modelo
         $ws.Name = $nome
         $ws.Range("A11:G15").ClearContents() | Out-Null
         $ws.Range("I11:I15").ClearContents() | Out-Null
@@ -487,8 +491,7 @@ try {
           $nome = NomeAba $wb ("BETUME-R$($e.registro)-FAIXA $($e.faixa)-$("$($e.rua)".ToUpper())")
           if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
           $modelo = AbaModelo $wb
-          CopiaAba $wb $modelo
-          $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+          $ws = CopiaAba $wb $modelo
           $ws.Name = $nome
           try {
           # células mescladas (A8:B8, E8:F8...): limpar a mescla inteira
@@ -562,8 +565,8 @@ try {
           if ($ix -ge 0 -and $null -ne $pn.passante) { $wr.Cells($r, 9 + $ix).Value2 = [double][math]::Round([double]$pn.passante, 3) }
         }
         # teor e projeto como fração (as colunas X e Y são formatadas em %)
-        if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor / 100, 4); $wr.Range("X$r").NumberFormat = "0.00%" }
-        if ($null -ne $e.proj) { $wr.Range("Y$r").Value2 = [double]([double]$e.proj / 100); $wr.Range("Y$r").NumberFormat = "0.0%" }
+        if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor / 100, 4); $wr.Range("X$r").NumberFormatLocal = "0,00%" }
+        if ($null -ne $e.proj) { $wr.Range("Y$r").Value2 = [double]([double]$e.proj / 100); $wr.Range("Y$r").NumberFormatLocal = "0,0%" }
         $txtAba = if ($nome) { "aba '$nome' + " } else { "" }
         Log "OK  $rot -> $($txtAba)linha $r no Resumo (CBUQ Gl Betume)$avisoFicha"
       }
