@@ -166,8 +166,9 @@ function UltimaLinha($ws, $col, $min) {
   if ($r -lt $min) { return $min - 1 } else { return $r }
 }
 # copia a linha anterior (formatos e fórmulas) para a nova e limpa as células de dado
-function NovaLinha($ws, $col) {
-  $ult = UltimaLinha $ws $col 6
+function NovaLinha($ws, $col, $prim = 6) {
+  $ult = UltimaLinha $ws $col $prim
+  if ($ult -lt $prim) { return $prim }   # aba vazia: usa a linha-modelo (já tem as fórmulas)
   $nova = $ult + 1
   $null = $ws.Rows($ult).Copy($ws.Rows($nova))
   return $nova
@@ -246,7 +247,7 @@ try {
         foreach ($f in $furos) {
           $i++
           $gc = $ws.Range("S$(9 + $i)").Value2
-          $r = NovaLinha $wr 4
+          $r = NovaLinha $wr 4 10
           LimpaDados $wr $r @("A","B","C","D","E","F","G","H","J","K","N","Q","R","T","U")
           FormulasDe $wr 10 $r
           $reg = if ("$($e.registro)" -match '\.') { "$($e.registro)" } else { "$($e.registro).$i" }
@@ -537,7 +538,7 @@ try {
         }
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
         $wr = $wbRes.Worksheets.Item("CBUQ Gl Betume")
-        $r = NovaLinha $wr 2          # coluna B (data): a coluna A já vem numerada até o fim da aba
+        $r = NovaLinha $wr 2 15          # coluna B (data): a coluna A já vem numerada até o fim da aba
         if ($r -lt 15) { $r = 15 }
         LimpaDados $wr $r @("A","B","C","D","E","F","G","I","J","K","L","M","N","O","P","Q","R","S","U","X","Y","AB","AC","AF")
         FormulasDe $wr 15 $r
