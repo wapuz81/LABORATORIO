@@ -427,7 +427,59 @@ try {
       }
       elseif ($e.tipo -eq "betume") {
         # ===== CBUQ teor de betume + granulometria =====
-        # A ficha (TEOR BETUME) ainda não está mapeada: por enquanto lança só no Resumo.
+        # ficha "TEOR DE BETUME" (uma por faixa): cabeçalho H2/H3/C3/C4/H4/C5/H5, pesagens na linha 8, retidos na coluna C das linhas 15–27
+        $avisoFicha = ""
+        $nome = $null
+        $orig = MapaCfg "fichasBetume" $e.faixa
+        if (-not $orig) { $avisoFicha = "; sem ficha configurada para a faixa '$($e.faixa)' (config.json, fichasBetume): lancei só no Resumo" }
+        else {
+          $wb = Abrir (Destino $orig)
+          $nome = NomeAba $wb ("BETUME-R$($e.registro)-FAIXA $($e.faixa)-$("$($e.rua)".ToUpper())")
+          if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
+          $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
+          $modelo.Copy($M, $modelo)
+          $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+          $ws.Name = $nome
+          foreach ($c in @("A8","C8","E8","A9","C9","E9")) { $ws.Range($c).ClearContents() | Out-Null }
+          foreach ($c in @("D8","D9")) { if (-not $ws.Range($c).HasFormula) { $ws.Range($c).ClearContents() | Out-Null } }
+          $ws.Range("C15:C27").ClearContents() | Out-Null
+          $ws.Range("F15:F27").ClearContents() | Out-Null
+          Escreve $ws "H2" (NumOuTexto "$($e.registro)")
+          Escreve $ws "H3" (DataOA $e.data)
+          Escreve $ws "C3" ("Rua " + $e.rua)
+          Escreve $ws "C4" $e.segmento
+          Escreve $ws "H4" ("$($e.empreiteira)".ToUpper())
+          Escreve $ws "C5" ("CBUQ - FAIXA `"$($e.faixa)`"")
+          Escreve $ws "H5" ("$($e.procedencia)".ToUpper())
+          Escreve $ws "K12" $e.faixa
+          Escreve $ws "A8" $e.mistura
+          Escreve $ws "C8" $e.papel
+          if (-not $ws.Range("D8").HasFormula) { Escreve $ws "D8" $e.papelAgreg }
+          Escreve $ws "E8" $e.agregado
+          # linha de cada peneira pela abertura (mm) da coluna A
+          $mmPen = @{ "2" = @(50.8, 50); "112" = @(38.1, 37.5); "1" = @(25.4, 25); "34" = @(19.1, 19); "12" = @(12.7, 12.5); "38" = @(9.5); "4" = @(4.8, 4.75); "10" = @(2.0); "40" = @(0.42); "80" = @(0.18); "200" = @(0.075) }
+          $faltou = @()
+          foreach ($pn in @($e.peneiras)) {
+            if ($null -eq $pn.retidoAcum) { continue }
+            $linha = 0
+            for ($l = 15; $l -le 27; $l++) {
+              $v = $ws.Range("A$l").Value2
+              if ($v -is [double]) { foreach ($m in $mmPen["$($pn.peneira)"]) { if ([math]::Abs($v - $m) -lt 0.011) { $linha = $l } } }
+              if ($linha) { break }
+            }
+            if (-not $linha) { $faltou += $pn.nome; continue }
+            Escreve $ws "C$linha" ([double]$pn.retidoAcum)
+            # a aba modelo pode estar sem as fórmulas: repõe retido/passante/média nessa linha
+            $ws.Range("D$linha").Formula = "=IF(`$C$linha=`"`",`"`",C$linha/`$E`$12)"
+            $ws.Range("E$linha").Formula = "=IF(`$C$linha=`"`",`"`",1-D$linha)"
+            $ws.Range("I$linha").Formula = "=IF(E$linha=`"`",`"`",AVERAGE(H$linha,E$linha))"
+          }
+          if ($faltou) { $avisoFicha = "; peneira(s) sem linha na ficha: $($faltou -join ', ')" }
+          for ($l = 40; $l -le 60; $l++) {
+            if ("$($ws.Range("A$l").Value2)" -like "OBSERVA*") { $ws.Range("A$l").Value2 = [string]("OBSERVAÇÃO: " + $(if ($e.obs) { $e.obs } else { "" })); break }
+          }
+          $xl.Calculate()
+        }
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
         $wr = $wbRes.Worksheets.Item("CBUQ Gl Betume")
         $r = NovaLinha $wr 2          # coluna B (data): a coluna A já vem numerada até o fim da aba
@@ -450,7 +502,8 @@ try {
         }
         if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor, 2) }
         if ($null -ne $e.proj) { Escreve $wr "Y$r" ([double]$e.proj) }
-        Log "OK  $rot -> linha $r no Resumo (CBUQ Gl Betume); ficha TEOR BETUME ainda não é preenchida pelo lançador"
+        $txtAba = if ($nome) { "aba '$nome' + " } else { "" }
+        Log "OK  $rot -> $($txtAba)linha $r no Resumo (CBUQ Gl Betume)$avisoFicha"
       }
       else { throw "tipo de ensaio desconhecido: $($e.tipo)" }
       $lancados += [pscustomobject]@{ id = $e.id; tipo = $e.tipo; registro = $e.registro; rua = $e.rua; data = $e.data; lancado = $agora.ToString("yyyy-MM-dd HH:mm"); modo = $modo; arquivo = $e.arquivo }
