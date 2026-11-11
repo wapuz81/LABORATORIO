@@ -142,6 +142,9 @@ function PreparaFicha($wb, $tipo) {
     "concreto" {
       Limpa $ws @("B12:I26", "K12:Q26", "P4", "C5")
       $ws.Range("J12").Formula = "=IF(I12=$q$q,$q$q,I12-F12)"
+      # datas de rompimento davam #VALOR! com a data de moldagem (P4) em branco
+      $ws.Range("AD9").Formula = "=IF(OR(AD8=$q$q,W4=$q$q),$q$q,W4+AD8)"
+      $ws.Range("AF9").Formula = "=IF(OR(AF8=$q$q,W4=$q$q),$q$q,W4+AF8)"
       for ($l = 27; $l -le 32; $l++) { if ("$($ws.Range("B$l").Value2)" -like "OBSERVA*") { $ws.Range("B$l").Value2 = "OBSERVAÇÃO: "; break } }
     }
     "betume" {
