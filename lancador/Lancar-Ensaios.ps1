@@ -115,7 +115,7 @@ $M = [System.Reflection.Missing]::Value
 # copia a aba modelo para o fim da pasta; se o Excel recusar, ativa a pasta e tenta de novo
 function CopiaAba($wb, $modelo) {
   for ($t = 1; $t -le 3; $t++) {
-    try { $modelo.Copy($M, $modelo); return }
+    try { $modelo.Copy([Type]::Missing, $modelo); return }
     catch {
       if ($t -eq 3) { throw }
       Start-Sleep -Seconds 2
