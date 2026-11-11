@@ -501,6 +501,10 @@ try {
           Escreve $ws "C8" $e.papel
           if (-not $ws.Range("D8").HasFormula) { Escreve $ws "D8" $e.papelAgreg }
           Escreve $ws "E8" $e.agregado
+          # a aba modelo pode estar sem as fórmulas do teor (ex.: "TEOR DE BETUM copia"): repõe G8, I8 e J8
+          if (-not $ws.Range("G8").HasFormula) { $ws.Range("G8").Formula = '=IF(A8="","",A8-E8)' }
+          if (-not $ws.Range("I8").HasFormula) { $ws.Range("I8").Formula = '=IF(G8="","",(A8-E8)/A8)' }
+          if (-not $ws.Range("J8").HasFormula) { $ws.Range("J8").Formula = '=IF(I8="","",AVERAGE(I8:I9))' }
           # linha de cada peneira pela abertura (mm) da coluna A
           $mmPen = @{ "2" = @(50.8, 50); "112" = @(38.1, 37.5); "1" = @(25.4, 25); "34" = @(19.1, 19); "12" = @(12.7, 12.5); "38" = @(9.5); "4" = @(4.8, 4.75); "10" = @(2.0); "40" = @(0.42); "80" = @(0.18); "200" = @(0.075) }
           $faltou = @()
