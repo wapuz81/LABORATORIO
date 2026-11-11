@@ -12,6 +12,10 @@ vê o resultado na hora e exporta um arquivo `.json` para o PC.
   Critérios: GC ≥ 100% e umidade entre −2% e +1% da ótima.
 - **Viga Benkelman:** D = (Li − Lf) × K por lado (LE, eixo, LD). Deflexão admissível pela tabela do
   projeto (camada × Número N da rua), a mesma da aba `Viga. Benk` do Resumo. Mostra também Dc = média + desvio.
+- **Moldagem de concreto** e **Imprimação / Pintura de ligação (EAI, RR-1C)**: ver telas do app.
+- **CBUQ teor de betume:** ligante = mistura − agregado, teor = ligante / mistura (±0,3% do projeto);
+  granulometria por retido acumulado, passante comparado com a Faixa B ou C (mesmos limites do Resumo).
+  O lançador grava a linha na aba `CBUQ Gl Betume` do Resumo (a ficha TEOR BETUME ainda não é preenchida).
 - **Cadastros:** ruas com o N, materiais com umidade ótima e densidades, padrões (areia, K da viga).
 - Os dados ficam no aparelho (armazenamento do navegador) até serem exportados.
 

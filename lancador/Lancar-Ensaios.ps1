@@ -425,6 +425,33 @@ try {
         }
         Log "OK  $rot -> aba '$nome' + $($bands.Count) linha(s) no Resumo ($aba)"
       }
+      elseif ($e.tipo -eq "betume") {
+        # ===== CBUQ teor de betume + granulometria =====
+        # A ficha (TEOR BETUME) ainda não está mapeada: por enquanto lança só no Resumo.
+        if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
+        $wr = $wbRes.Worksheets.Item("CBUQ Gl Betume")
+        $r = NovaLinha $wr 2          # coluna B (data): a coluna A já vem numerada até o fim da aba
+        if ($r -lt 15) { $r = 15 }
+        LimpaDados $wr $r @("A","B","C","D","E","F","G","I","J","K","L","M","N","O","P","Q","R","S","U","X","Y","AB","AC","AF")
+        FormulasDe $wr 15 $r
+        Escreve $wr "A$r" (NumOuTexto "$($e.registro)")
+        Escreve $wr "B$r" (DataOA $e.data)
+        $wr.Range("B$r").NumberFormatLocal = "dd/mm/aa"
+        Escreve $wr "C$r" (Rua $e)
+        Escreve $wr "D$r" $e.segmento
+        Escreve $wr "E$r" $e.faixa
+        Escreve $wr "F$r" $e.camada
+        $lado = switch ("$($e.lado)") { "LE" { "Esquerdo" } "LD" { "Direito" } default { "Eixo" } }
+        Escreve $wr "G$r" $lado
+        $ordem = @("2","112","1","34","12","38","4","10","40","80","200")   # colunas I..S
+        foreach ($pn in @($e.peneiras)) {
+          $ix = [array]::IndexOf($ordem, "$($pn.peneira)")
+          if ($ix -ge 0 -and $null -ne $pn.passante) { $wr.Cells($r, 9 + $ix).Value2 = [double][math]::Round([double]$pn.passante, 3) }
+        }
+        if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor, 2) }
+        if ($null -ne $e.proj) { Escreve $wr "Y$r" ([double]$e.proj) }
+        Log "OK  $rot -> linha $r no Resumo (CBUQ Gl Betume); ficha TEOR BETUME ainda não é preenchida pelo lançador"
+      }
       else { throw "tipo de ensaio desconhecido: $($e.tipo)" }
       $lancados += [pscustomobject]@{ id = $e.id; tipo = $e.tipo; registro = $e.registro; rua = $e.rua; data = $e.data; lancado = $agora.ToString("yyyy-MM-dd HH:mm"); modo = $modo; arquivo = $e.arquivo }
     }
