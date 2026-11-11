@@ -149,7 +149,7 @@ $wbRes = $null
 
 try {
   foreach ($e in $ensaios) {
-    $rot = "$($e.tipo) R$($e.registro) - $($e.rua) - $($e.data)"
+    $rot = "$($e.tipo) R$($e.registro) - $(if ($e.rua) { $e.rua } else { $e.local }) - $($e.data)"
     try {
       if ($e.tipo -eq "densidade") {
         # ===== ficha =====
@@ -332,7 +332,7 @@ try {
         Escreve $ws "M12" ("$($e.placa)".ToUpper())
         $elem = "$($e.elemento)".ToUpper(); if ($e.lado -and $e.lado -ne "–") { $elem = "$elem - $("$($e.lado)".ToUpper())" }
         Escreve $ws "N12" $elem
-        Escreve $ws "Q12" $e.idades
+        if ($e.idades) { $ws.Range("Q12").NumberFormat = "@"; $ws.Range("Q12").Value2 = [string]$e.idades }   # texto: "7/28" não pode virar data
         Escreve $ws "N30" ("$($e.moldador)".ToUpper())
         if ($e.obs) { Escreve $ws "B29" ("OBSERVAÇÃO: " + $e.obs) }
         # ===== resumo: aba Concreto =====
