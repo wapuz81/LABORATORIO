@@ -113,9 +113,14 @@ function Abrir($caminho) {
 }
 $M = [System.Reflection.Missing]::Value
 # copia a aba modelo para o fim da pasta; se o Excel recusar, ativa a pasta e tenta de novo
+# aba que serve de modelo: a "MODELO" (ficha preparada); se não existir, a última aba
+function AbaModelo($wb) {
+  foreach ($s in $wb.Worksheets) { if ($s.Name -eq "MODELO") { return $s } }
+  return $wb.Worksheets.Item($wb.Worksheets.Count)
+}
 function CopiaAba($wb, $modelo) {
   for ($t = 1; $t -le 3; $t++) {
-    try { $modelo.Copy([Type]::Missing, $modelo); return }
+    try { $modelo.Copy([Type]::Missing, $wb.Worksheets.Item($wb.Worksheets.Count)); return }
     catch {
       if ($t -eq 3) { throw }
       Start-Sleep -Seconds 2
@@ -205,7 +210,7 @@ try {
         $wb = Abrir (Destino $orig)
         $nome = NomeAba $wb ("IN SITU-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
-        $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $modelo = AbaModelo $wb
         CopiaAba $wb $modelo
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
         $ws.Name = $nome
@@ -277,7 +282,7 @@ try {
         $wb = Abrir (Destino $orig)
         $nome = NomeAba $wb ("VIGA-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
-        $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $modelo = AbaModelo $wb
         CopiaAba $wb $modelo
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
         $ws.Name = $nome
@@ -351,7 +356,7 @@ try {
         $wb = Abrir (Destino $orig)
         $nome = NomeAba $wb ("SÉRIE $($e.registro)-$("$($e.elemento)".ToUpper())")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (série lançada à mão?)" }
-        $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $modelo = AbaModelo $wb
         CopiaAba $wb $modelo
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
         $ws.Name = $nome
@@ -409,7 +414,7 @@ try {
         $pref = if ($e.emulsao -eq "RR-1C") { "RR1C" } else { "EAI" }
         $nome = NomeAba $wb ("$pref-R$($e.registro)-$("$($e.camada)".ToUpper().Replace(' - ', ' '))-$("$($e.rua)".ToUpper())")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
-        $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
+        $modelo = AbaModelo $wb
         CopiaAba $wb $modelo
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
         $ws.Name = $nome
@@ -481,7 +486,7 @@ try {
           $wb = Abrir (Destino $orig)
           $nome = NomeAba $wb ("BETUME-R$($e.registro)-FAIXA $($e.faixa)-$("$($e.rua)".ToUpper())")
           if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
-          $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
+          $modelo = AbaModelo $wb
           CopiaAba $wb $modelo
           $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
           $ws.Name = $nome
@@ -556,8 +561,9 @@ try {
           $ix = [array]::IndexOf($ordem, "$($pn.peneira)")
           if ($ix -ge 0 -and $null -ne $pn.passante) { $wr.Cells($r, 9 + $ix).Value2 = [double][math]::Round([double]$pn.passante, 3) }
         }
-        if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor, 2) }
-        if ($null -ne $e.proj) { Escreve $wr "Y$r" ([double]$e.proj) }
+        # teor e projeto como fração (as colunas X e Y são formatadas em %)
+        if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor / 100, 4); $wr.Range("X$r").NumberFormat = "0.00%" }
+        if ($null -ne $e.proj) { $wr.Range("Y$r").Value2 = [double]([double]$e.proj / 100); $wr.Range("Y$r").NumberFormat = "0.0%" }
         $txtAba = if ($nome) { "aba '$nome' + " } else { "" }
         Log "OK  $rot -> $($txtAba)linha $r no Resumo (CBUQ Gl Betume)$avisoFicha"
       }
