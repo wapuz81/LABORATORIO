@@ -98,6 +98,30 @@ function Abrir($caminho) {
   return $abertos[$caminho]
 }
 $M = [System.Reflection.Missing]::Value
+# copia a aba modelo para o fim da pasta; se o Excel recusar, ativa a pasta e tenta de novo
+function CopiaAba($wb, $modelo) {
+  for ($t = 1; $t -le 3; $t++) {
+    try { $modelo.Copy($M, $modelo); return }
+    catch {
+      if ($t -eq 3) { throw }
+      Start-Sleep -Seconds 2
+      try { $wb.Activate(); $modelo.Activate() } catch {}
+    }
+  }
+}
+# salva e fecha as fichas depois de cada ensaio (o Resumo fica aberto até o fim):
+# com muitas pastas abertas o Excel passa a recusar a cópia de abas
+function FechaFichas() {
+  $chaveRes = $destinos[$resumoOrig]
+  foreach ($k in @($abertos.Keys)) {
+    if ($k -ne $chaveRes) {
+      $w = $abertos[$k]
+      try { $w.Save() } catch { Log "   aviso: não consegui salvar $k ($($_.Exception.Message))" }
+      try { $w.Close($false) } catch {}
+      $abertos.Remove($k)
+    }
+  }
+}
 
 function DataOA($iso) { return ([datetime]::ParseExact($iso, "yyyy-MM-dd", $null)).ToOADate() }
 function DataBR($iso) { return ([datetime]::ParseExact($iso, "yyyy-MM-dd", $null)).ToString("dd/MM/yyyy") }
@@ -161,7 +185,7 @@ try {
         $nome = NomeAba $wb ("IN SITU-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
         $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
-        $modelo.Copy($M, $modelo)
+        CopiaAba $wb $modelo
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
         $ws.Name = $nome
         $ws.Range("A10:J17").ClearContents() | Out-Null
@@ -233,7 +257,7 @@ try {
         $nome = NomeAba $wb ("VIGA-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
         $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
-        $modelo.Copy($M, $modelo)
+        CopiaAba $wb $modelo
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
         $ws.Name = $nome
         foreach ($faixa in "A12:D27","F12:I27","K12:N27") { $ws.Range($faixa).ClearContents() | Out-Null }
@@ -307,7 +331,7 @@ try {
         $nome = NomeAba $wb ("SÉRIE $($e.registro)-$("$($e.elemento)".ToUpper())")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (série lançada à mão?)" }
         $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
-        $modelo.Copy($M, $modelo)
+        CopiaAba $wb $modelo
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
         $ws.Name = $nome
         $ws.Range("B12:I26").ClearContents() | Out-Null
@@ -365,7 +389,7 @@ try {
         $nome = NomeAba $wb ("$pref-R$($e.registro)-$("$($e.camada)".ToUpper().Replace(' - ', ' '))-$("$($e.rua)".ToUpper())")
         if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
         $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
-        $modelo.Copy($M, $modelo)
+        CopiaAba $wb $modelo
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
         $ws.Name = $nome
         $ws.Range("A11:G15").ClearContents() | Out-Null
@@ -437,7 +461,7 @@ try {
           $nome = NomeAba $wb ("BETUME-R$($e.registro)-FAIXA $($e.faixa)-$("$($e.rua)".ToUpper())")
           if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
           $modelo = $wb.Worksheets.Item($wb.Worksheets.Count)
-          $modelo.Copy($M, $modelo)
+          CopiaAba $wb $modelo
           $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
           $ws.Name = $nome
           try {
@@ -516,6 +540,7 @@ try {
       $lancados += [pscustomobject]@{ id = $e.id; tipo = $e.tipo; registro = $e.registro; rua = $e.rua; data = $e.data; lancado = $agora.ToString("yyyy-MM-dd HH:mm"); modo = $modo; arquivo = $e.arquivo }
     }
     catch { Log "ERRO $rot -> $($_.Exception.Message) (linha $($_.InvocationInfo.ScriptLineNumber))" }
+    finally { FechaFichas }
   }
   foreach ($wb in $abertos.Values) { $wb.Save() }
 }
