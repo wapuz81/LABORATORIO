@@ -93,8 +93,22 @@ $xl.Visible = $false
 $xl.DisplayAlerts = $false
 $xl.ScreenUpdating = $false
 $abertos = @{}
+# As fichas abrem num segundo Excel, que é fechado depois de cada ensaio: depois de umas 5 cópias
+# de aba na mesma instância o Excel passa a recusar Worksheet.Copy. O Resumo fica no Excel principal.
+$xf = $null
+function ExcelFichas() {
+  if (-not $script:xf) {
+    $script:xf = New-Object -ComObject Excel.Application
+    $script:xf.Visible = $false
+    $script:xf.DisplayAlerts = $false
+  }
+  return $script:xf
+}
 function Abrir($caminho) {
-  if (-not $abertos.ContainsKey($caminho)) { $abertos[$caminho] = $xl.Workbooks.Open($caminho) }
+  if (-not $abertos.ContainsKey($caminho)) {
+    $app = if ($caminho -eq $destinos[$resumoOrig]) { $xl } else { ExcelFichas }
+    $abertos[$caminho] = $app.Workbooks.Open($caminho)
+  }
   return $abertos[$caminho]
 }
 $M = [System.Reflection.Missing]::Value
@@ -120,6 +134,12 @@ function FechaFichas() {
       try { $w.Close($false) } catch {}
       $abertos.Remove($k)
     }
+  }
+  if ($script:xf) {
+    try { $script:xf.Quit() } catch {}
+    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($script:xf) | Out-Null
+    $script:xf = $null
+    [GC]::Collect(); [GC]::WaitForPendingFinalizers()
   }
 }
 
@@ -218,7 +238,7 @@ try {
           $l++
         }
         if ($e.obs) { Escreve $ws "A18" ("OBSERVAÇÃO: " + $e.obs) }
-        $xl.Calculate()
+        $ws.Calculate()
         # ===== resumo: aba Mat. Granular =====
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
         $wr = $wbRes.Worksheets.Item("Mat. Granular")
@@ -423,7 +443,7 @@ try {
           $l++
         }
         if ($e.obs) { Escreve $ws "A27" ("OBSERVAÇÃO: " + $e.obs) }
-        $xl.Calculate()
+        $ws.Calculate()
         # ===== resumo: aba Imprimação ou P. Ligação =====
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
         $aba = if ($e.emulsao -eq "RR-1C") { "P. Ligação" } else { "Imprimação" }
@@ -503,11 +523,11 @@ try {
           for ($l = 40; $l -le 60; $l++) {
             if ("$($ws.Range("A$l").Value2)" -like "OBSERVA*") { $ws.Range("A$l").Value2 = [string]("OBSERVAÇÃO: " + $(if ($e.obs) { $e.obs } else { "" })); break }
           }
-          $xl.Calculate()
+          $ws.Calculate()
           }
           catch {
             # não deixa aba pela metade (senão ela vira o modelo do próximo lançamento)
-            $xl.DisplayAlerts = $false; try { $ws.Delete() | Out-Null } catch {}
+            $ws.Application.DisplayAlerts = $false; try { $ws.Delete() | Out-Null } catch {}
             throw
           }
         }
@@ -546,6 +566,7 @@ try {
 }
 finally {
   foreach ($wb in $abertos.Values) { try { $wb.Close($false) } catch {} }
+  if ($xf) { try { $xf.Quit() } catch {} }
   $xl.Quit()
   [System.Runtime.InteropServices.Marshal]::ReleaseComObject($xl) | Out-Null
   [FiltroCom]::Desligar()
