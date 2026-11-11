@@ -255,7 +255,7 @@ try {
         # ===== resumo: aba Mat. Granular =====
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
         $wr = $wbRes.Worksheets.Item("Mat. Granular")
-        $i = 0
+        $i = 0; $otProj = $null
         foreach ($f in $furos) {
           $i++
           $gc = $ws.Range("S$(9 + $i)").Value2
@@ -272,14 +272,22 @@ try {
           Escreve $wr "G$r" (@{ "LE" = "Esquerdo"; "Eixo" = "Eixo"; "LD" = "Direito" }[$f.posicao])
           if ($gc -is [double]) { $wr.Range("H$r").Value2 = [math]::Round($gc / 100, 4) }
           if ($null -ne $f.umidade) { $wr.Range("J$r").Value2 = [math]::Round([double]$f.umidade / 100, 4) }
-          # ótima: mantém a fórmula da Proj. Exec.; se o valor usado no campo for outro, grava o do campo
+          # ótima: vale sempre a da Proj. Exec. (fórmula da coluna K); o valor do campo só entra se o material não tiver projeto
           $xl.Calculate()
           $k = $wr.Range("K$r")
-          if ($null -ne $e.otima -and (-not ($k.Value2 -is [double]) -or [math]::Abs($k.Value2 * 100 - [double]$e.otima) -gt 0.05)) {
+          if ($k.Value2 -is [double] -and $k.Value2 -gt 0) {
+            $otProj = [math]::Round($k.Value2 * 100, 2)
+            if ($i -eq 1 -and $null -ne $e.otima -and [math]::Abs($otProj - [double]$e.otima) -gt 0.05) {
+              Log "   aviso: R$($e.registro) - o campo usou umidade ótima $($e.otima)%; vale a da Proj. Exec.: $otProj%"
+            }
+          }
+          elseif ($null -ne $e.otima) {
             $k.Value2 = [math]::Round([double]$e.otima / 100, 4)
-            Log "   aviso: R$($e.registro).$i - umidade ótima do Resumo diferente da usada no campo; gravei $($e.otima)% na coluna proj."
+            Log "   aviso: R$($e.registro).$i - material sem umidade ótima na Proj. Exec.; gravei a do campo ($($e.otima)%) na coluna proj."
           }
         }
+        # a ficha mostra a mesma ótima do Resumo
+        if ($otProj) { $ws.Range("R2").Value2 = [double]$otProj; $ws.Calculate() }
         Log "OK  $rot -> aba '$nome' + $($furos.Count) linha(s) no Resumo (Mat. Granular)"
       }
       elseif ($e.tipo -eq "benkelman") {
