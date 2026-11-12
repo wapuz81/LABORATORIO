@@ -133,11 +133,16 @@ const TAB_ADM = {
   1e6:[200,200,150,120,80], 2e6:[180,180,140,100,70], 5e6:[175,175,135,90,60],
   2e7:[170,170,130,80,50], 4e7:[170,170,120,70,45], 5e7:[170,170,110,65,40]
 };
+const RUAS_V = 2; // aumentar quando a lista de ruas padrão ganhar ruas
 const PADRAO = {
   ruas:[
     {nome:"Arthur Euclides de Moura",N:2e7},{nome:"André Szalbot",N:5e6},{nome:"Batista da Costa",N:2e7},
     {nome:"Eloi Orestes Zeglin",N:2e7},{nome:"Estephana Pietruza",N:2e7},{nome:"Hermenegildo Bonat",N:2e7},
-    {nome:"Jovina de Oliveira Karam",N:2e7},{nome:"Marechal Althayr Roszanniy",N:5e7},{nome:"Torquato Tasso",N:5e6}
+    {nome:"Jovina de Oliveira Karam",N:2e7},{nome:"Marechal Althayr Roszanniy",N:5e7},{nome:"Torquato Tasso",N:5e6},
+    // acrescentadas em 2026-11-12 (sem Número N definido: a deflexão admissível fica para digitar)
+    {nome:"Barão de Santo Ângelo",N:null},{nome:"Ipiranga",N:null},{nome:"Omar Raymundo Picheth",N:null},
+    {nome:"Othoniel Taborda Reinhardt",N:null},{nome:"Santa Mônica",N:null},{nome:"Linha Verde",N:null},
+    {nome:"Trincheira Sul",N:null},{nome:"Trincheira Norte",N:null},{nome:"Estação São Pedro",N:null}
   ],
   materiais:[
     {nome:"Moledo",procedencia:"Pedreira Costa",otima:6.4,densLab:2198,densReal:""},
@@ -168,6 +173,12 @@ function carregar(){
   d.cad=Object.assign(JSON.parse(JSON.stringify(PADRAO)),d.cad||{});
   d.cad.cfg=Object.assign({},PADRAO.cfg,d.cad.cfg||{});
   if(!d.ensaios) d.ensaios=[];
+  // aparelhos que já tinham o cadastro salvo recebem uma vez as ruas acrescentadas depois
+  if((d.cad.cfg.ruasV||1)<RUAS_V){
+    const chave=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+    PADRAO.ruas.forEach(r=>{if(!d.cad.ruas.some(x=>chave(x.nome)===chave(r.nome)))d.cad.ruas.push(Object.assign({},r));});
+    d.cad.cfg.ruasV=RUAS_V;
+  }
   return d;
 }
 let avisouArmazenamento=false;
@@ -197,7 +208,7 @@ function proxEstaca(lista){
   const passo=v.length>1?(v[v.length-1]-v[v.length-2]):10;
   return mEst(v[v.length-1]+(passo||10));
 }
-function ruaN(nome){const r=DB.cad.ruas.find(x=>x.nome===nome);return r?r.N:NaN;}
+function ruaN(nome){const r=DB.cad.ruas.find(x=>x.nome===nome);return r&&r.N?r.N:NaN;}
 function admissivel(N,camada){const lin=TAB_ADM[N];const i=CAMADAS.indexOf(camada);return lin&&i>=0?lin[i]:NaN;}
 function material(nome){return DB.cad.materiais.find(m=>m.nome===nome);}
 function nomeN(N){return ok(N)?(N/Math.pow(10,Math.floor(Math.log10(N)))).toLocaleString("pt-BR")+"×10"+sup(Math.floor(Math.log10(N))):"–";}
@@ -803,7 +814,7 @@ function telaCad(){
     <h2>Ruas e Número N</h2>
     <section class="card"><div class="tblwrap"><table class="lt"><thead><tr><th>Rua</th><th>N</th><th></th></tr></thead><tbody>
       ${c.ruas.map((r,i)=>`<tr><td><input data-rua="${i}" data-k="nome" value="${esc(r.nome)}"></td>
-        <td style="width:34%"><select data-rua="${i}" data-k="N">${Object.keys(TAB_ADM).map(n=>`<option value="${n}"${+n===r.N?" selected":""}>${nomeN(+n)}</option>`).join("")}</select></td>
+        <td style="width:34%"><select data-rua="${i}" data-k="N"><option value=""${r.N?"":" selected"}>sem N</option>${Object.keys(TAB_ADM).map(n=>`<option value="${n}"${+n===r.N?" selected":""}>${nomeN(+n)}</option>`).join("")}</select></td>
         <td><button class="btn small" type="button" data-rmrua="${i}" aria-label="Remover rua">×</button></td></tr>`).join("")}
     </tbody></table></div><div><button class="btn small" type="button" id="addRua">+ Rua</button></div>
     <p class="note">Ruas com N = 1×10⁸ usam a linha 5×10⁷ da tabela, como no Resumo.</p></section>
@@ -846,9 +857,9 @@ function telaCad(){
   const gravaEnvio=()=>envioSalvar({url:$("#p_envUrl").value.trim(),chave:$("#p_envChave").value.trim()});
   $("#p_envUrl").oninput=gravaEnvio;$("#p_envChave").oninput=gravaEnvio;
 
-  document.querySelectorAll("[data-rua]").forEach(el=>el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{const r=c.ruas[+el.dataset.rua];r[el.dataset.k]=el.dataset.k==="N"?+el.value:el.value;salvar();}));
+  document.querySelectorAll("[data-rua]").forEach(el=>el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{const r=c.ruas[+el.dataset.rua];r[el.dataset.k]=el.dataset.k==="N"?(el.value?+el.value:null):el.value;salvar();}));
   document.querySelectorAll("[data-rmrua]").forEach(b=>b.onclick=()=>{c.ruas.splice(+b.dataset.rmrua,1);salvar();render();});
-  $("#addRua").onclick=()=>{c.ruas.push({nome:"",N:2e7});salvar();render();};
+  $("#addRua").onclick=()=>{c.ruas.push({nome:"",N:null});salvar();render();};
   document.querySelectorAll("[data-mat]").forEach(el=>el.oninput=()=>{c.materiais[+el.dataset.mat][el.dataset.k]=el.value;salvar();});
   document.querySelectorAll("[data-rmmat]").forEach(b=>b.onclick=()=>{c.materiais.splice(+b.dataset.rmmat,1);salvar();render();});
   document.querySelectorAll("[data-tr]").forEach(el=>el.oninput=()=>{c.tracos[+el.dataset.tr][el.dataset.k]=el.value;salvar();});
