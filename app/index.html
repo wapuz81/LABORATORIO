@@ -836,7 +836,16 @@ function telaCad(){
     <h2>Restaurar</h2>
     <section class="card"><p class="note">Volta ruas, materiais e padrões aos valores iniciais. Os ensaios não são apagados.</p>
       ${confirmando==="cad"?`<div class="row"><button class="btn danger" type="button" id="resSim">Restaurar cadastros</button><button class="btn" type="button" id="resNao">Cancelar</button></div>`
-      :`<div><button class="btn small danger" type="button" id="restaurar">Restaurar valores iniciais</button></div>`}</section>`;
+      :`<div><button class="btn small danger" type="button" id="restaurar">Restaurar valores iniciais</button></div>`}</section>
+    <h2>Envio direto para o PC</h2>
+    <section class="card">
+      <span class="note">${envioCfg().url?"Configurado: o botão Enviar para o PC manda os ensaios com um toque.":"Não configurado. Abra no celular o link de configuração que você recebeu, ou cole abaixo o endereço e a chave."}</span>
+      ${campo("p_envUrl","Endereço do envio (script.google.com)",envioCfg().url||"",'full inputmode="url" autocomplete="off"')}
+      ${campo("p_envChave","Chave",envioCfg().chave||"",'full autocomplete="off"')}
+    </section>`;
+  const gravaEnvio=()=>envioSalvar({url:$("#p_envUrl").value.trim(),chave:$("#p_envChave").value.trim()});
+  $("#p_envUrl").oninput=gravaEnvio;$("#p_envChave").oninput=gravaEnvio;
+
   document.querySelectorAll("[data-rua]").forEach(el=>el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{const r=c.ruas[+el.dataset.rua];r[el.dataset.k]=el.dataset.k==="N"?+el.value:el.value;salvar();}));
   document.querySelectorAll("[data-rmrua]").forEach(b=>b.onclick=()=>{c.ruas.splice(+b.dataset.rmrua,1);salvar();render();});
   $("#addRua").onclick=()=>{c.ruas.push({nome:"",N:2e7});salvar();render();};
@@ -893,6 +902,21 @@ function pacote(lista){
       return base;})};
 }
 function aammdd(){const d=new Date();return String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");}
+// ---- envio direto para o PC (Google Apps Script que grava na pasta ENTRADA do Drive) ----
+const ENVIO_KEY="lab-campo-envio";
+function envioCfg(){try{return JSON.parse(localStorage.getItem(ENVIO_KEY)||"{}")||{};}catch(e){return {};}}
+function envioSalvar(o){try{localStorage.setItem(ENVIO_KEY,JSON.stringify(o));}catch(e){}}
+// link de configuração: .../?envio=<url do script>&chave=<chave>  (abrir uma vez no celular)
+(function(){try{const q=new URLSearchParams(location.search);const u=q.get("envio");
+  if(u&&/^https:\/\/script\.google\.com\//.test(u)){envioSalvar({url:u,chave:q.get("chave")||""});history.replaceState(null,"",location.pathname);
+    setTimeout(()=>toast("Envio direto para o PC configurado"),600);}}catch(e){}})();
+async function enviarPC(nome,json){
+  const c=envioCfg();
+  const r=await fetch(c.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({chave:c.chave||"",nome:nome,conteudo:json}),redirect:"follow"});
+  const j=await r.json();
+  if(!j||!j.ok)throw new Error(j&&j.erro||"resposta inesperada");
+  return j;
+}
 function telaExport(){
   $("#titulo").textContent="Exportar para o PC";
   const reais=DB.ensaios.filter(e=>!e.exemplo);
@@ -908,10 +932,11 @@ function telaExport(){
     </section>
     <section class="card">
       <b>Enviar para o PC</b>
-      <span class="note">Toque em <b>Enviar para o Drive</b>, escolha <b>Drive</b> e salve na pasta <b>LANCADOR APP CAMPO &gt; ENTRADA</b>. O PC lança sozinho em poucos minutos. Sem internet agora? Envie depois: os ensaios ficam guardados no aparelho.</span>
-      <div class="row">
-        <button class="btn primary grow" type="button" id="exShare">Enviar para o Drive</button>
-      </div>
+      ${envioCfg().url?`<span class="note">Um toque: os ensaios vão direto para a pasta do lançador e o PC lança sozinho em poucos minutos. Sem internet agora? Envie depois: os ensaios ficam guardados no aparelho.</span>
+      <div class="row"><button class="btn primary grow" type="button" id="exPC">Enviar para o PC</button></div>
+      <div class="row"><button class="btn grow" type="button" id="exShare">Enviar por outro app</button></div>`
+      :`<span class="note">Toque em <b>Enviar para o Drive</b>, escolha <b>Drive</b> e salve na pasta <b>LANCADOR APP CAMPO &gt; ENTRADA</b>. O PC lança sozinho em poucos minutos. Sem internet agora? Envie depois: os ensaios ficam guardados no aparelho.</span>
+      <div class="row"><button class="btn primary grow" type="button" id="exShare">Enviar para o Drive</button></div>`}
       <span class="note">Outras formas: salvar o arquivo <b>${esc(nome)}</b> no aparelho ou copiar o texto.</span>
       <div class="row">
         <button class="btn grow" type="button" id="exBaixar">Salvar arquivo</button>
@@ -922,6 +947,13 @@ function telaExport(){
     </section>`;
   const marcar=()=>{sel.forEach(e=>e.status="exportado");salvar();};
   $("#exBaixar").onclick=()=>{try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));a.download=nome;document.body.appendChild(a);a.click();a.remove();marcar();toast("Arquivo salvo em Downloads");}catch(err){toast("Não foi possível salvar. Use Copiar texto.");}};
+  if($("#exPC"))$("#exPC").onclick=async()=>{
+    if(!sel.length){toast("Nenhum ensaio para enviar");return;}
+    const bt=$("#exPC");bt.disabled=true;bt.textContent="Enviando...";
+    try{await enviarPC(nome,json);marcar();toast("Enviado para o PC: "+sel.length+" ensaio(s)");ir("lista");}
+    catch(err){bt.disabled=false;bt.textContent="Enviar para o PC";
+      toast(navigator.onLine===false?"Sem internet. Tente de novo quando tiver sinal.":"Não foi possível enviar ("+(err&&err.message||"erro")+"). Tente de novo.");}
+  };
   $("#exShare").onclick=async()=>{
     if(!navigator.share){toast("Este navegador não envia arquivos. Abra o app no Chrome ou use Salvar arquivo.");return;}
     // o Android só compartilha alguns tipos de arquivo (.json não entra): vai como texto, e o lançador aceita .json.txt

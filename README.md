@@ -40,3 +40,4 @@ Para cada ensaio ele copia a última aba da ficha do material como modelo, cria 
 - No app, o botão **Enviar para o Drive** compartilha o arquivo; salve na pasta `ENTRADA` do lançador (Google Drive).
 - No PC, `LIGAR LANCAMENTO AUTOMATICO.bat` cria uma tarefa agendada que confere a `ENTRADA` a cada 5 minutos (`Vigiar-Entrada.ps1`) e roda o lançador sozinho, só no modo `gravar`. Ligue em um computador só. `DESLIGAR LANCAMENTO AUTOMATICO.bat` remove a tarefa.
 - Arquivos lançados vão para `ENTRADA\PROCESSADOS`; os que tiveram erro, para `ENTRADA\COM ERRO`. Os logs ficam em `LOGS`.
+- Envio de 1 toque (opcional): `lancador/envio-google-apps-script.gs` é um Google Apps Script que recebe os ensaios do app e grava na pasta `ENTRADA`. Depois de implantado, abra no celular `.../LABORATORIO/?envio=<endereço /exec>&chave=<chave>` uma vez; o app passa a mostrar o botão **Enviar para o PC**.
