@@ -1,5 +1,5 @@
 // Guarda o app no aparelho para funcionar sem internet na obra.
-const CACHE = "ensaios-campo-v13";
+const CACHE = "ensaios-campo-v14";
 const ARQUIVOS = ["./", "index.html", "manifest.webmanifest", "icon.svg"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARQUIVOS))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
