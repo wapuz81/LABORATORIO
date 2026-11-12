@@ -15,7 +15,7 @@ try {
   if (-not (Test-Path $entrada)) { exit }          # Drive ainda não montou
   $parado = Join-Path $entrada "PARADO - leia.txt"
   if (Test-Path $parado) { exit }
-  $jsons = @(Get-ChildItem -Path $entrada -Filter *.json -File)
+  $jsons = @(Get-ChildItem -Path $entrada -File | Where-Object { $_.Name -like "*.json" -or $_.Name -like "*.json.txt" })
   if (-not $jsons) { exit }
 
   # espera o Drive terminar de baixar: arquivo com conteúdo, parado há 30 s e sem ninguém usando
