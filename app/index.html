@@ -304,7 +304,8 @@ function render(){
 
 /* ================= Tela: lista ================= */
 function proxRegistro(tipo){
-  const r=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).map(e=>parseInt(e.registro)).filter(ok);
+  const r=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).map(e=>parseInt(e.registro))
+    .concat(lancTodos().filter(x=>x.tipo===tipo).map(x=>parseInt(x.registro))).filter(ok);
   return r.length?String(Math.max(...r)+1):"";
 }
 function novo(tipo){
@@ -400,7 +401,9 @@ function telaLista(){
           <span class="chip ${s.cls}">${s.t}</span>
         </button>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
-    <p class="note">${pend} ensaio(s) ainda não exportado(s). Os dados ficam guardados só neste aparelho até você exportar.</p>`;
+    <p class="note">${pend} ensaio(s) ainda não exportado(s). Os dados ficam guardados só neste aparelho até você exportar.</p>
+    ${blocoLancados()}`;
+  if($("#lancAtu"))$("#lancAtu").onclick=()=>buscarLancados(true);
   $("#nDens").onclick=()=>novo("densidade");
   $("#nBenk").onclick=()=>novo("benkelman");
   $("#nTaxa").onclick=()=>novo("taxa");
@@ -934,6 +937,48 @@ function pacote(lista){
 function aammdd(){const d=new Date();return String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");}
 // ---- envio direto para o PC (Google Apps Script que grava na pasta ENTRADA do Drive) ----
 const ENVIO_KEY="lab-campo-envio";
+/* ===== ensaios já lançados no PC por todos os celulares (lista lancados.csv lida pelo Apps Script) ===== */
+const LANC_KEY="lab-campo-lancados";
+const NOME_TIPO={densidade:"Densidade",benkelman:"Benkelman",concreto:"Concreto",taxa:"Imprim./Pintura",betume:"CBUQ"};
+function lancCache(){try{return JSON.parse(localStorage.getItem(LANC_KEY)||"null")||{quando:0,itens:[]};}catch(e){return {quando:0,itens:[]};}}
+function lancTodos(){return lancCache().itens||[];}
+let buscandoLanc=false;
+async function buscarLancados(avisar){
+  const c=envioCfg();
+  if(!c.url||!c.chave){if(avisar)toast("Faça um envio para o PC primeiro (a senha é pedida nele)");return;}
+  if(buscandoLanc)return;buscandoLanc=true;
+  try{
+    const r=await fetch(c.url+(c.url.includes("?")?"&":"?")+"lista=1&chave="+encodeURIComponent(c.chave),{redirect:"follow"});
+    const j=await r.json();
+    if(!j||!j.ok||!Array.isArray(j.itens)){if(avisar)toast(j&&j.erro?"Não consegui atualizar: "+j.erro:"O PC ainda não tem a lista (código do Google antigo)");return;}
+    localStorage.setItem(LANC_KEY,JSON.stringify({quando:Date.now(),itens:j.itens}));
+    if(avisar)toast("Lista atualizada: "+j.itens.length+" ensaio(s) lançados");
+    if(tela.nome==="lista")render();
+  }catch(e){if(avisar)toast("Sem internet ou sem resposta do Google");}
+  finally{buscandoLanc=false;}
+}
+function lancadoOutro(e){
+  const r=String(e.registro||"").trim();if(!r)return null;
+  return lancTodos().find(x=>x.tipo===e.tipo&&String(x.registro).trim()===r&&x.id!==e.id)||null;
+}
+function blocoLancados(){
+  const L=lancCache(),c=envioCfg();
+  if(!c.url)return "";
+  const its=(L.itens||[]).filter(x=>filtro==="todos"||filtro==="pend"||x.tipo===filtro).slice().reverse().slice(0,60);
+  const qd=L.quando?new Date(L.quando):null;
+  return `<details class="card"><summary><b>Já lançados no PC (todos os celulares)</b></summary>
+    <span class="note">${qd?`Atualizado em ${String(qd.getDate()).padStart(2,"0")}/${String(qd.getMonth()+1).padStart(2,"0")} às ${String(qd.getHours()).padStart(2,"0")}:${String(qd.getMinutes()).padStart(2,"0")}.`:"Ainda não atualizado."} O número do próximo ensaio já leva em conta esta lista.</span>
+    <div><button class="btn small" type="button" id="lancAtu">Atualizar</button></div>
+    ${its.length?`<div class="tblwrap"><table class="lt"><thead><tr><th>Ensaio</th><th>Reg.</th><th>Rua / local</th><th>Data</th><th>Quem</th></tr></thead><tbody>
+      ${its.map(x=>`<tr><td>${esc(NOME_TIPO[x.tipo]||x.tipo)}</td><td>${esc(x.registro)}</td><td>${esc(x.rua)}</td><td>${dataBR(x.data).slice(0,5)}</td><td>${esc(x.quem)}</td></tr>`).join("")}
+    </tbody></table></div>`:""}</details>`;
+}
+// aviso ao digitar um registro que outro celular já lançou
+document.addEventListener("change",ev=>{const t=ev.target;if(!t||!/_registro$/.test(t.id||"")||!tela.arg)return;
+  const e=DB.ensaios.find(x=>x.id===tela.arg);if(!e)return;const o=lancadoOutro(e);
+  if(o)toast(`Atenção: ${NOME_TIPO[e.tipo]||e.tipo} R${e.registro} já foi lançado${o.quem?" por "+o.quem:""} (${dataBR(o.data)}). O PC não vai aceitar número repetido.`);});
+window.addEventListener("online",()=>buscarLancados(false));
+setTimeout(()=>{if(navigator.onLine!==false)buscarLancados(false);},1500);
 function envioCfg(){try{return JSON.parse(localStorage.getItem(ENVIO_KEY)||"{}")||{};}catch(e){return {};}}
 function envioSalvar(o){try{localStorage.setItem(ENVIO_KEY,JSON.stringify(o));}catch(e){}}
 // link de configuração: .../?envio=<url do script>  (abrir uma vez no celular; a senha é pedida no 1º envio)

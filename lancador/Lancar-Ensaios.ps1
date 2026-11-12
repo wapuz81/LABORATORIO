@@ -32,6 +32,10 @@ if (Test-Path $registroLanc) { Import-Csv $registroLanc -Encoding UTF8 | ForEach
 
 $ensaios = @()
 $naFila = @{}
+# tipo + registro já usados (por qualquer celular): o mesmo número com outro id é registro repetido
+function ChaveReg($e) { $r = "$($e.registro)".Trim(); if (-not $r) { return $null }; return "$($e.tipo)|$r".ToLower() }
+$regUsado = @{}
+foreach ($l in $jaLancados.Values) { $k = ChaveReg $l; if ($k -and -not $regUsado.ContainsKey($k)) { $regUsado[$k] = "lançado em $($l.lancado) ($($l.arquivo))" } }
 $comErro = @{}      # arquivos .json com problema (ilegível, de outro app ou com algum ensaio que deu erro)
 foreach ($j in $jsons) {
   try { $pac = Get-Content -Raw -Encoding UTF8 $j.FullName | ConvertFrom-Json }
@@ -41,6 +45,12 @@ foreach ($j in $jsons) {
     if ($jaLancados.ContainsKey($e.id)) { Log "Já lançado antes, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
     # o mesmo ensaio pode vir em mais de um arquivo da mesma rodada (reenvio): lança só a primeira cópia
     if ($naFila.ContainsKey($e.id)) { Log "Repetido em outro arquivo desta rodada, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
+    $k = ChaveReg $e
+    if ($k -and $regUsado.ContainsKey($k)) {
+      Log "ERRO registro repetido: $($e.tipo) R$($e.registro) ($($e.rua)) de $($j.Name) - esse número já foi $($regUsado[$k]). Troque o número no app e envie de novo."
+      $comErro[$j.Name] = $true; continue
+    }
+    if ($k) { $regUsado[$k] = "usado em $($j.Name), nesta mesma rodada" }
     $naFila[$e.id] = $true
     $e | Add-Member -NotePropertyName arquivo -NotePropertyValue $j.Name -Force
     $ensaios += $e
