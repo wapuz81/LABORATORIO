@@ -133,16 +133,18 @@ const TAB_ADM = {
   1e6:[200,200,150,120,80], 2e6:[180,180,140,100,70], 5e6:[175,175,135,90,60],
   2e7:[170,170,130,80,50], 4e7:[170,170,120,70,45], 5e7:[170,170,110,65,40]
 };
-const RUAS_V = 2; // aumentar quando a lista de ruas padrão ganhar ruas
+const RUAS_V = 3; // aumentar quando a lista de ruas padrão ganhar ruas
 const PADRAO = {
   ruas:[
     {nome:"Arthur Euclides de Moura",N:2e7},{nome:"André Szalbot",N:5e6},{nome:"Batista da Costa",N:2e7},
     {nome:"Eloi Orestes Zeglin",N:2e7},{nome:"Estephana Pietruza",N:2e7},{nome:"Hermenegildo Bonat",N:2e7},
     {nome:"Jovina de Oliveira Karam",N:2e7},{nome:"Marechal Althayr Roszanniy",N:5e7},{nome:"Torquato Tasso",N:5e6},
-    // acrescentadas em 2026-11-12 (sem Número N definido: a deflexão admissível fica para digitar)
-    {nome:"Barão de Santo Ângelo",N:null},{nome:"Ipiranga",N:null},{nome:"Omar Raymundo Picheth",N:null},
-    {nome:"Othoniel Taborda Reinhardt",N:null},{nome:"Santa Mônica",N:null},{nome:"Linha Verde",N:null},
-    {nome:"Trincheira Sul",N:null},{nome:"Trincheira Norte",N:null},{nome:"Estação São Pedro",N:null}
+    // acrescentadas em 2026-11-12; N do Quadro 50 do Memorial de Pavimentação (N = 1×10⁸ usa a linha 5×10⁷)
+    {nome:"Barão de Santo Ângelo",N:5e7},{nome:"Ipiranga",N:5e7},{nome:"Omar Raymundo Picheth",N:5e7},
+    {nome:"Othoniel Taborda Reinhardt",N:5e6},{nome:"Santa Mônica",N:5e6},{nome:"Linha Verde",N:5e7},
+    {nome:"Estação São Pedro",N:5e7},
+    // sem Número N no projeto: a deflexão admissível fica para digitar
+    {nome:"Trincheira Sul",N:null},{nome:"Trincheira Norte",N:null}
   ],
   materiais:[
     {nome:"Moledo",procedencia:"Pedreira Costa",otima:6.4,densLab:2198,densReal:""},
@@ -176,7 +178,8 @@ function carregar(){
   // aparelhos que já tinham o cadastro salvo recebem uma vez as ruas acrescentadas depois
   if((d.cad.cfg.ruasV||1)<RUAS_V){
     const chave=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-    PADRAO.ruas.forEach(r=>{if(!d.cad.ruas.some(x=>chave(x.nome)===chave(r.nome)))d.cad.ruas.push(Object.assign({},r));});
+    PADRAO.ruas.forEach(r=>{const x=d.cad.ruas.find(x=>chave(x.nome)===chave(r.nome));
+      if(!x)d.cad.ruas.push(Object.assign({},r));else if(!x.N&&r.N)x.N=r.N;});
     d.cad.cfg.ruasV=RUAS_V;
   }
   return d;
