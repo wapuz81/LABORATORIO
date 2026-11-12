@@ -31,6 +31,7 @@ $jaLancados = @{}
 if (Test-Path $registroLanc) { Import-Csv $registroLanc -Encoding UTF8 | ForEach-Object { $jaLancados[$_.id] = $_ } }
 
 $ensaios = @()
+$naFila = @{}
 $comErro = @{}      # arquivos .json com problema (ilegível, de outro app ou com algum ensaio que deu erro)
 foreach ($j in $jsons) {
   try { $pac = Get-Content -Raw -Encoding UTF8 $j.FullName | ConvertFrom-Json }
@@ -38,6 +39,9 @@ foreach ($j in $jsons) {
   if ($pac.app -ne "ensaios-campo-trincheira") { Log "ERRO arquivo não é do app Ensaios de Campo: $($j.Name)"; $comErro[$j.Name] = $true; continue }
   foreach ($e in $pac.ensaios) {
     if ($jaLancados.ContainsKey($e.id)) { Log "Já lançado antes, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
+    # o mesmo ensaio pode vir em mais de um arquivo da mesma rodada (reenvio): lança só a primeira cópia
+    if ($naFila.ContainsKey($e.id)) { Log "Repetido em outro arquivo desta rodada, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
+    $naFila[$e.id] = $true
     $e | Add-Member -NotePropertyName arquivo -NotePropertyValue $j.Name -Force
     $ensaios += $e
   }
