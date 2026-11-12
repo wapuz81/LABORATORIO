@@ -44,5 +44,30 @@ function doPost(e) {
     return resposta({ ok: false, erro: String(err) });
   }
 }
-function doGet() { return resposta({ ok: true, app: 'envio-ensaios-campo' }); }
+// GET ?lista=1&chave=SENHA devolve os ensaios já lançados no PC (arquivo lancados.csv da ENTRADA),
+// para o app de todos os celulares saber o que já foi feito e qual é o próximo número de registro.
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  if (!p.lista) return resposta({ ok: true, app: 'envio-ensaios-campo' });
+  try {
+    if (!quemEnviou(p.chave)) return resposta({ ok: false, erro: 'senha errada' });
+    var arqs = DriveApp.getFolderById(PASTA_ENTRADA).getFilesByName('lancados.csv');
+    if (!arqs.hasNext()) return resposta({ ok: true, itens: [] });
+    var txt = arqs.next().getBlob().getDataAsString('UTF-8').replace(/^﻿/, '');
+    var linhas = Utilities.parseCsv(txt);
+    var cab = linhas.shift() || [];
+    var col = {}; for (var i = 0; i < cab.length; i++) col[String(cab[i]).trim()] = i;
+    var itens = [];
+    for (var k = 0; k < linhas.length; k++) {
+      var l = linhas[k]; if (!l || !l[col.id]) continue;
+      var arq = String(l[col.arquivo] || '');
+      var m = arq.match(/ - ([^-]+?)\.json(\.txt)?$/i);
+      itens.push({ id: l[col.id], tipo: l[col.tipo], registro: l[col.registro], rua: l[col.rua], data: l[col.data],
+                   lancado: l[col.lancado], quem: m && !/ensaios campo/i.test(m[1]) ? m[1].trim() : '' });
+    }
+    return resposta({ ok: true, itens: itens });
+  } catch (err) {
+    return resposta({ ok: false, erro: String(err) });
+  }
+}
 function resposta(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
