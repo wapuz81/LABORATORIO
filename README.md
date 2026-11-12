@@ -34,3 +34,9 @@ Para cada ensaio ele copia a última aba da ficha do material como modelo, cria 
 - `"modo": "teste"` (padrão): trabalha em cópias na `pastaSaidaTeste\aammdd-hhmm\`; os originais não são tocados.
 - `"modo": "gravar"`: altera os originais; antes guarda a versão anterior na subpasta `ANTIGO`,
   registra os ensaios em `lancados.csv` (não lança duas vezes) e move os `.json` para `PROCESSADOS`.
+
+### Lançamento automático (opcional)
+
+- No app, o botão **Enviar para o Drive** compartilha o arquivo; salve na pasta `ENTRADA` do lançador (Google Drive).
+- No PC, `LIGAR LANCAMENTO AUTOMATICO.bat` cria uma tarefa agendada que confere a `ENTRADA` a cada 5 minutos (`Vigiar-Entrada.ps1`) e roda o lançador sozinho, só no modo `gravar`. Ligue em um computador só. `DESLIGAR LANCAMENTO AUTOMATICO.bat` remove a tarefa.
+- Arquivos lançados vão para `ENTRADA\PROCESSADOS`; os que tiveram erro, para `ENTRADA\COM ERRO`. Os logs ficam em `LOGS`.
