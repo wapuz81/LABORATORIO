@@ -269,7 +269,7 @@ function exemplos(){
 
 /* ================= Navegação ================= */
 let tela={nome:"lista"}, filtro="todos", confirmando=null;
-function ir(nome,arg){tela={nome,arg};confirmando=null;render();window.scrollTo(0,0);}
+function ir(nome,arg){if(nome!=="exportar")reenviarTodos=false;tela={nome,arg};confirmando=null;render();window.scrollTo(0,0);}
 $("#btnVoltar").onclick=()=>ir("lista");
 $("#btnMenu").onclick=()=>ir(tela.nome==="cadastros"?"lista":"cadastros");
 
@@ -937,17 +937,26 @@ async function enviarPC(nome,json){
   if(!j||!j.ok)throw new Error(j&&j.erro||"resposta inesperada");
   return j;
 }
+let reenviarTodos=false;
 function telaExport(){
   $("#titulo").textContent="Exportar para o PC";
   const reais=DB.ensaios.filter(e=>!e.exemplo);
   const pend=reais.filter(e=>e.status!=="exportado");
+  if(!pend.length&&!reenviarTodos){
+    $("#app").innerHTML=`<section class="card"><b>Nenhum ensaio novo para enviar</b>
+      <span class="note">${reais.length?`Os ${reais.length} ensaio(s) deste celular já foram enviados. Quando você preencher um ensaio novo, ele aparece aqui.`:"Ainda não há ensaios neste celular."}</span>
+      ${reais.length?`<span class="note">Só use o botão abaixo se o PC não recebeu um envio. Ensaios que o PC já lançou são ignorados por ele.</span>
+      <div class="row"><button class="btn grow" type="button" id="exTodos">Reenviar todos (${reais.length})</button></div>`:""}</section>`;
+    if($("#exTodos"))$("#exTodos").onclick=()=>{reenviarTodos=true;render();};
+    setBar(null);return;
+  }
   const sel=pend.length?pend:reais;
   const json=JSON.stringify(pacote(sel),null,1);
   const _h=new Date();const nome=`${aammdd()} ${String(_h.getHours()).padStart(2,"0")}${String(_h.getMinutes()).padStart(2,"0")} - ensaios campo.json`;
   $("#app").innerHTML=`
     <section class="card">
       <b>${sel.length} ensaio(s) no arquivo</b>
-      <span class="note">${pend.length?"Vão só os ensaios ainda não exportados (ou alterados depois).":"Todos já foram exportados; o arquivo leva todos de novo."} Os exemplos não entram.</span>
+      <span class="note">${pend.length?"Vão só os ensaios novos (ou alterados depois do envio).":"Reenvio: o arquivo leva todos de novo. O PC ignora os que já lançou."} Os exemplos não entram.</span>
       <div class="list">${sel.map(e=>`<div class="row"><span class="item tag" style="width:auto;padding:4px 8px;cursor:default">${rotTag(e)}</span><span class="grow">${esc(e.rua)} · ${dataBR(e.data)}</span></div>`).join("")||'<div class="empty">Nenhum ensaio para exportar.</div>'}</div>
     </section>
     <section class="card">
@@ -970,7 +979,7 @@ function telaExport(){
   if($("#exPC"))$("#exPC").onclick=async()=>{
     if(!sel.length){toast("Nenhum ensaio para enviar");return;}
     const bt=$("#exPC");bt.disabled=true;bt.textContent="Enviando...";
-    try{await enviarPC(nome,json);marcar();toast("Enviado para o PC: "+sel.length+" ensaio(s)");ir("lista");}
+    try{await enviarPC(nome,json);marcar();reenviarTodos=false;toast(pend.length?"Enviado para o PC: "+sel.length+" ensaio(s) novo(s)":"Reenviados "+sel.length+" ensaio(s). O PC ignora os já lançados.");ir("lista");}
     catch(err){bt.disabled=false;bt.textContent="Enviar para o PC";
       toast(navigator.onLine===false?"Sem internet. Tente de novo quando tiver sinal.":"Não foi possível enviar ("+(err&&err.message||"erro")+"). Tente de novo.");}
   };
