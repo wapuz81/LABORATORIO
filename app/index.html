@@ -133,7 +133,9 @@ const TAB_ADM = {
   1e6:[200,200,150,120,80], 2e6:[180,180,140,100,70], 5e6:[175,175,135,90,60],
   2e7:[170,170,130,80,50], 4e7:[170,170,120,70,45], 5e7:[170,170,110,65,40]
 };
-const RUAS_V = 3; // aumentar quando a lista de ruas padrão ganhar ruas
+// Locais que não são rua: só entram no ensaio de concreto
+const LOCAIS = ["Trincheira Norte","Trincheira Sul","Estação São Pedro"];
+const RUAS_V = 4; // aumentar quando a lista de ruas padrão ganhar ruas
 const PADRAO = {
   ruas:[
     {nome:"Arthur Euclides de Moura",N:2e7},{nome:"André Szalbot",N:5e6},{nome:"Batista da Costa",N:2e7},
@@ -141,10 +143,7 @@ const PADRAO = {
     {nome:"Jovina de Oliveira Karam",N:2e7},{nome:"Marechal Althayr Roszanniy",N:5e7},{nome:"Torquato Tasso",N:5e6},
     // acrescentadas em 2026-11-12; N do Quadro 50 do Memorial de Pavimentação (N = 1×10⁸ usa a linha 5×10⁷)
     {nome:"Barão de Santo Ângelo",N:5e7},{nome:"Ipiranga",N:5e7},{nome:"Omar Raymundo Picheth",N:5e7},
-    {nome:"Othoniel Taborda Reinhardt",N:5e6},{nome:"Santa Mônica",N:5e6},{nome:"Linha Verde",N:5e7},
-    {nome:"Estação São Pedro",N:5e7},
-    // sem Número N no projeto: a deflexão admissível fica para digitar
-    {nome:"Trincheira Sul",N:null},{nome:"Trincheira Norte",N:null}
+    {nome:"Othoniel Taborda Reinhardt",N:5e6},{nome:"Santa Mônica",N:5e6},{nome:"Linha Verde",N:5e7}
   ],
   materiais:[
     {nome:"Moledo",procedencia:"Pedreira Costa",otima:6.4,densLab:2198,densReal:""},
@@ -180,6 +179,7 @@ function carregar(){
     const chave=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
     PADRAO.ruas.forEach(r=>{const x=d.cad.ruas.find(x=>chave(x.nome)===chave(r.nome));
       if(!x)d.cad.ruas.push(Object.assign({},r));else if(!x.N&&r.N)x.N=r.N;});
+    d.cad.ruas=d.cad.ruas.filter(x=>!LOCAIS.some(l=>chave(l)===chave(x.nome)));
     d.cad.cfg.ruasV=RUAS_V;
   }
   return d;
@@ -615,8 +615,8 @@ function telaConc(id){
     <section class="card"><div class="grid g3">
       ${campo("c_registro","Série nº",e.registro,'inputmode="numeric"')}
       <label class="f">Data da moldagem<input id="c_data" type="date" value="${esc(e.data)}"></label>
-      ${campo("c_local","Local (Resumo)",e.local,'placeholder="Trincheira Norte"')}
-      <label class="f full">Rua<select id="c_rua">${opts(DB.cad.ruas.map(r=>r.nome),e.rua,"Escolha a rua (opcional)")}</select></label>
+      ${campo("c_local","Local (Resumo)",e.local,'placeholder="Trincheira Norte" list="dl_local"')}<datalist id="dl_local">${LOCAIS.map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
+      <label class="f full">Rua ou local<select id="c_rua">${opts(LOCAIS.concat(DB.cad.ruas.map(r=>r.nome)),e.rua,"Escolha (opcional)")}</select></label>
       <label class="f">Estrutura<select id="c_estrutura">${opts(ESTRUTURAS,e.estrutura,"Escolha")}</select></label>
       ${campo("c_elemento","Elemento concretado / estaca",e.elemento,'placeholder="VIGA COROA E:96 a 124" full')}
       <div class="full"><div class="seg" role="group" aria-label="Lado">${["LE","Eixo","LD","–"].map(p=>`<button type="button" data-lado="${p}" aria-pressed="${e.lado===p}">${p}</button>`).join("")}</div></div>
