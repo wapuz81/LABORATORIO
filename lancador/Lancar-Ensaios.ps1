@@ -30,19 +30,47 @@ $jaLancados = @{}
 if (Test-Path $registroLanc) { Import-Csv $registroLanc -Encoding UTF8 | ForEach-Object { $jaLancados[$_.id] = $_ } }
 
 $ensaios = @()
+$comErro = @{}      # arquivos .json com problema (ilegível, de outro app ou com algum ensaio que deu erro)
 foreach ($j in $jsons) {
-  $pac = Get-Content -Raw -Encoding UTF8 $j.FullName | ConvertFrom-Json
-  if ($pac.app -ne "ensaios-campo-trincheira") { Log "Ignorado (não é do app): $($j.Name)"; continue }
+  try { $pac = Get-Content -Raw -Encoding UTF8 $j.FullName | ConvertFrom-Json }
+  catch { Log "ERRO arquivo ilegível (não é um .json válido): $($j.Name)"; $comErro[$j.Name] = $true; continue }
+  if ($pac.app -ne "ensaios-campo-trincheira") { Log "ERRO arquivo não é do app Ensaios de Campo: $($j.Name)"; $comErro[$j.Name] = $true; continue }
   foreach ($e in $pac.ensaios) {
     if ($jaLancados.ContainsKey($e.id)) { Log "Já lançado antes, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
     $e | Add-Member -NotePropertyName arquivo -NotePropertyValue $j.Name -Force
     $ensaios += $e
   }
 }
-if (-not $ensaios) { Log "Todos os ensaios desses arquivos já foram lançados."; Pausa; exit }
+$modo = if ($cfg.modo) { $cfg.modo.ToLower() } else { "teste" }
+$raiz = Split-Path $Config -Parent
+function MoveUnico($arq, $pasta) {
+  if (-not (Test-Path $pasta)) { New-Item -ItemType Directory $pasta | Out-Null }
+  $dest = Join-Path $pasta $arq.Name
+  if (Test-Path -LiteralPath $dest) { $dest = Join-Path $pasta ($arq.BaseName + " ($carimbo)" + $arq.Extension) }
+  Move-Item -LiteralPath $arq.FullName -Destination $dest
+}
+# no modo gravar a ENTRADA sempre termina vazia: sem erro vai para PROCESSADOS; com erro vai para COM ERRO
+# (corrija e devolva para a ENTRADA: só o que faltou é lançado)
+function GuardaEntrada() {
+  if ($modo -ne "gravar") { return }
+  foreach ($j in $jsons) {
+    if ($comErro.ContainsKey($j.Name)) { MoveUnico $j (Join-Path $entrada "COM ERRO"); Log "Arquivo com problema guardado em ENTRADA\COM ERRO: $($j.Name)" }
+    else { MoveUnico $j (Join-Path $entrada "PROCESSADOS") }
+  }
+}
+function GravaLog($pasta) {
+  if (-not (Test-Path $pasta)) { New-Item -ItemType Directory $pasta -Force | Out-Null }
+  $log | Set-Content -Encoding UTF8 (Join-Path $pasta "$carimbo - log lancador.txt")
+}
+if (-not $ensaios) {
+  Log "Nenhum ensaio novo para lançar nesses arquivos."
+  GuardaEntrada
+  if ($modo -eq "gravar") { GravaLog (Join-Path $raiz "LOGS") }
+  Pausa
+  if ($comErro.Count) { exit 2 } else { exit 0 }
+}
 
 # ---------- preparar arquivos de destino (cópia de teste ou backup em ANTIGO) ----------
-$modo = if ($cfg.modo) { $cfg.modo.ToLower() } else { "teste" }
 $pastaTeste = Join-Path $cfg.pastaSaidaTeste $carimbo
 if ($modo -ne "gravar") { New-Item -ItemType Directory $pastaTeste -Force | Out-Null }
 $destinos = @{}
@@ -581,7 +609,7 @@ try {
       else { throw "tipo de ensaio desconhecido: $($e.tipo)" }
       $lancados += [pscustomobject]@{ id = $e.id; tipo = $e.tipo; registro = $e.registro; rua = $e.rua; data = $e.data; lancado = $agora.ToString("yyyy-MM-dd HH:mm"); modo = $modo; arquivo = $e.arquivo }
     }
-    catch { Log "ERRO $rot -> $($_.Exception.Message) (linha $($_.InvocationInfo.ScriptLineNumber))" }
+    catch { Log "ERRO $rot -> $($_.Exception.Message) (linha $($_.InvocationInfo.ScriptLineNumber))"; $comErro[$e.arquivo] = $true }
     finally { FechaFichas }
   }
   foreach ($wb in $abertos.Values) { $wb.Save() }
@@ -598,13 +626,12 @@ finally {
 if ($modo -eq "gravar" -and $lancados) {
   if (Test-Path $registroLanc) { $lancados | Export-Csv $registroLanc -Append -NoTypeInformation -Encoding UTF8 }
   else { $lancados | Export-Csv $registroLanc -NoTypeInformation -Encoding UTF8 }
-  $proc = Join-Path $entrada "PROCESSADOS"
-  if (-not (Test-Path $proc)) { New-Item -ItemType Directory $proc | Out-Null }
-  foreach ($j in $jsons) { Move-Item $j.FullName (Join-Path $proc $j.Name) -Force }
 }
+GuardaEntrada
 
 Log ""
 if ($modo -eq "gravar") { Log "Pronto. Arquivos originais atualizados; versões anteriores em ANTIGO." }
 else { Log "Pronto (modo TESTE). Cópias em: $pastaTeste" }
-$log | Set-Content -Encoding UTF8 (Join-Path $(if ($modo -eq "gravar") { $entrada } else { $pastaTeste }) "$carimbo - log lancador.txt")
+GravaLog $(if ($modo -eq "gravar") { Join-Path $raiz "LOGS" } else { $pastaTeste })
 Pausa
+if ($comErro.Count) { exit 2 } else { exit 0 }

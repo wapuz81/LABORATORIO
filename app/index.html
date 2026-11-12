@@ -899,7 +899,7 @@ function telaExport(){
   const pend=reais.filter(e=>e.status!=="exportado");
   const sel=pend.length?pend:reais;
   const json=JSON.stringify(pacote(sel),null,1);
-  const nome=`${aammdd()} - ensaios campo.json`;
+  const _h=new Date();const nome=`${aammdd()} ${String(_h.getHours()).padStart(2,"0")}${String(_h.getMinutes()).padStart(2,"0")} - ensaios campo.json`;
   $("#app").innerHTML=`
     <section class="card">
       <b>${sel.length} ensaio(s) no arquivo</b>
@@ -907,11 +907,14 @@ function telaExport(){
       <div class="list">${sel.map(e=>`<div class="row"><span class="item tag" style="width:auto;padding:4px 8px;cursor:default">${rotTag(e)}</span><span class="grow">${esc(e.rua)} · ${dataBR(e.data)}</span></div>`).join("")||'<div class="empty">Nenhum ensaio para exportar.</div>'}</div>
     </section>
     <section class="card">
-      <b>Como levar para o PC</b>
-      <span class="note">Salve o arquivo <b>${esc(nome)}</b> na pasta do lançador no Drive (ou mande por WhatsApp/e-mail para você mesmo). No PC, dê dois cliques em LANCAR ENSAIOS.bat.</span>
+      <b>Enviar para o PC</b>
+      <span class="note">Toque em <b>Enviar para o Drive</b>, escolha <b>Drive</b> e salve na pasta <b>LANCADOR APP CAMPO &gt; ENTRADA</b>. O PC lança sozinho em poucos minutos. Sem internet agora? Envie depois: os ensaios ficam guardados no aparelho.</span>
       <div class="row">
-        <button class="btn primary grow" type="button" id="exBaixar">Salvar arquivo</button>
-        <button class="btn grow" type="button" id="exShare">Compartilhar</button>
+        <button class="btn primary grow" type="button" id="exShare">Enviar para o Drive</button>
+      </div>
+      <span class="note">Outras formas: salvar o arquivo <b>${esc(nome)}</b> no aparelho ou copiar o texto.</span>
+      <div class="row">
+        <button class="btn grow" type="button" id="exBaixar">Salvar arquivo</button>
         <button class="btn grow" type="button" id="exCopiar">Copiar texto</button>
       </div>
       <textarea class="exp" id="exTxt" readonly aria-label="Conteúdo do arquivo">${esc(json)}</textarea>
@@ -920,8 +923,8 @@ function telaExport(){
   const marcar=()=>{sel.forEach(e=>e.status="exportado");salvar();};
   $("#exBaixar").onclick=()=>{try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));a.download=nome;document.body.appendChild(a);a.click();a.remove();marcar();toast("Arquivo salvo em Downloads");}catch(err){toast("Não foi possível salvar. Use Copiar texto.");}};
   $("#exShare").onclick=async()=>{try{const f=new File([json],nome,{type:"application/json"});
-      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:nome});marcar();toast("Compartilhado");}
-      else{await navigator.share({title:nome,text:json});marcar();toast("Compartilhado");}}catch(err){if(err&&err.name!=="AbortError")toast("Compartilhar não está disponível aqui. Use Salvar ou Copiar.");}};
+      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:nome});marcar();toast("Enviado");}
+      else{await navigator.share({title:nome,text:json});marcar();toast("Enviado");}}catch(err){if(err&&err.name!=="AbortError")toast("Enviar não está disponível aqui. Use Salvar arquivo ou Copiar texto.");}};
   $("#exCopiar").onclick=()=>{const t=$("#exTxt");navigator.clipboard?.writeText(json).then(()=>toast("Texto copiado"),()=>{t.select();toast("Selecionado: use Copiar do teclado");})??(t.select(),toast("Selecionado: use Copiar do teclado"));};
   $("#exMarcar").onclick=()=>{marcar();toast("Marcados como exportados");ir("lista");};
   setBar(null);
