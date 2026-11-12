@@ -420,10 +420,10 @@ try {
         if ($d) {
           $bomb = "$($e.lancamento)" -match '^bomb'
           $ws.Range("B7").Value2 = "LANÇAMENTO:       ( $(if ($bomb) {' '} else {'X'}) )  CONVENCIONAL      ( $(if ($bomb) {'X'} else {' '}) )  BOMBEADO"
-          $ws.Range("B8").Value2 = "DIÂMETRO MÁXIMO DO  AGREGADO: " + $(if ("$($d.dmax)") { "$($d.dmax)mm" } else { "" })
+          $ws.Range("B8").Value2 = "DIÂMETRO MÁXIMO DO  AGREGADO: " + $(if ("$($d.dmax)" -match '^\s*[\d.,]+\s*$') { "$("$($d.dmax)".Trim())mm" } else { "$($d.dmax)" })
           $ws.Range("B9").Value2 = "ABATIMENTO ESPECIFICO: " + $(if ("$($e.slumpEsp)") { "$($e.slumpEsp) + - $($e.tolSlump)" } else { "" })
           $ws.Range("L8").Value2 = "$($d.aditivo)".ToUpper()
-          $vt = if ("$($e.acumulado)") { $e.acumulado } else { $e.volume }
+          $vt = if ("$($e.acumulado)" -and [double]$e.acumulado -gt 0) { $e.acumulado } elseif ("$($e.volume)" -and [double]$e.volume -gt 0) { $e.volume } else { "" }
           $ws.Range("L9").Value2 = $(if ("$vt") { ("$vt" -replace '\.', ',') + "m³" } else { "" })
           $ws.Range("N7").Value2 = "CIMENTO (Kg): $($d.dCimento)"
           $ws.Range("P7").Value2 = "PEDRA (Kg): " + $(if ("$($d.dPedra0)") { "0-$($d.dPedra0)" } else { "" })
