@@ -135,6 +135,9 @@ const TAB_ADM = {
 };
 // Locais que não são rua: só entram no ensaio de concreto
 const LOCAIS = ["Trincheira Norte","Trincheira Sul","Estação São Pedro"];
+const DOSAGEM = [["dmax","Diâm. máx. agregado (mm)"],["aditivo","Tipo de aditivo"],["dCimento","Cimento (kg)"],["dAreia","Areia (kg)"],
+  ["dPedra0","Pedra 0 (kg)"],["dPedra1","Pedra 1 (kg)"],["dAgua","Água (kg)"],["dAditivo","Aditivo (kg)"]];
+const TRACOS_V = 2; // aumentar quando os traços padrão ganharem dados novos
 const RUAS_V = 4; // aumentar quando a lista de ruas padrão ganhar ruas
 const PADRAO = {
   ruas:[
@@ -157,10 +160,10 @@ const PADRAO = {
   ],
   empreiteiras:["VDL"],
   tracos:[
-    {nome:"Cotragon fck 35 (estrutural)",concreteira:"Cotragon",fck:35,cimento:"CP V ARI",slump:12,tolSlump:2},
-    {nome:"Cotragon fck 30 (estacas hélice)",concreteira:"Cotragon",fck:30,cimento:"CP II F-40",slump:22,tolSlump:3},
-    {nome:"Cotragon fck 30 (vigas/lajes)",concreteira:"Cotragon",fck:30,cimento:"CPV-ARI",slump:12,tolSlump:2},
-    {nome:"Ricamix fck 35",concreteira:"Ricamix",fck:35,cimento:"CP II F-40",slump:12,tolSlump:2}
+    {nome:"Cotragon fck 35 (estrutural)",concreteira:"Cotragon",fck:35,cimento:"CP V ARI",slump:12,tolSlump:2,dmax:"",aditivo:"",dCimento:"",dAreia:"",dPedra0:"",dPedra1:"",dAgua:"",dAditivo:""},
+    {nome:"Cotragon fck 30 (estacas hélice)",concreteira:"Cotragon",fck:30,cimento:"CP II F-40",slump:22,tolSlump:3,dmax:"",aditivo:"",dCimento:"",dAreia:"",dPedra0:"",dPedra1:"",dAgua:"",dAditivo:""},
+    {nome:"Cotragon fck 30 (vigas/lajes)",concreteira:"Cotragon",fck:30,cimento:"CPV-ARI",slump:12,tolSlump:2,dmax:"12",aditivo:"PLASTIFICANTE-RD250",dCimento:"322",dAreia:"339/509",dPedra0:"201",dPedra1:"805",dAgua:"(190L) 119,75",dAditivo:"3.220"},
+    {nome:"Ricamix fck 35",concreteira:"Ricamix",fck:35,cimento:"CP II F-40",slump:12,tolSlump:2,dmax:"",aditivo:"",dCimento:"",dAreia:"",dPedra0:"",dPedra1:"",dAgua:"",dAditivo:""}
   ],
   cfg:{areiaCone:1765, densAreia:1338, kViga:2, li:500, areaBandeja:0.085, projEAI:1.2, projRR:1.0, tolTaxa:0.2, projB:4.6, projC:5.0, tolBetume:0.3, usinaCBUQ:"USINA MORRO REDONDO", laboratorista:""}
 };
@@ -181,6 +184,11 @@ function carregar(){
       if(!x)d.cad.ruas.push(Object.assign({},r));else if(!x.N&&r.N)x.N=r.N;});
     d.cad.ruas=d.cad.ruas.filter(x=>!LOCAIS.some(l=>chave(l)===chave(x.nome)));
     d.cad.cfg.ruasV=RUAS_V;
+  }
+  // traços salvos antes de existir a dosagem recebem os campos (e os valores do padrão, se tiverem o mesmo nome)
+  if((d.cad.cfg.tracosV||1)<TRACOS_V){
+    d.cad.tracos.forEach(t=>{const p=PADRAO.tracos.find(x=>x.nome===t.nome)||{};DOSAGEM.forEach(([k])=>{if(t[k]==null||t[k]==="")t[k]=p[k]||"";});});
+    d.cad.cfg.tracosV=TRACOS_V;
   }
   return d;
 }
@@ -313,7 +321,8 @@ function novo(tipo){
   } else if(tipo==="concreto"){
     const t=DB.cad.tracos.find(x=>x.nome===ult.traco)||DB.cad.tracos[0]||{};
     e=Object.assign(base,{local:ult.local||"Trincheira Norte",estrutura:ult.estrutura||"VIGA",elemento:"",lado:ult.lado||"",traco:t.nome||"",
-      concreteira:t.concreteira||"",fck:fmtIn(t.fck),cimento:t.cimento||"",slumpEsp:fmtIn(t.slump),tolSlump:fmtIn(t.tolSlump),
+      concreteira:t.concreteira||"",fck:fmtIn(t.fck),cimento:t.cimento||"",slumpEsp:fmtIn(t.slump),tolSlump:fmtIn(t.tolSlump),lancamento:ult.lancamento||"Convencional",
+      ...Object.fromEntries(DOSAGEM.map(([k])=>[k,t[k]||""])),
       slump:"",cps:"4",idades:"7/28",nf:"",placa:"",volume:"",acumulado:"",hDosagem:"",hChegada:"",hInicio:"",hTermino:"",moldador:ult.moldador||""});
   } else if(tipo==="taxa"){
     const em=EMULSOES.includes(ult.material)?ult.material:"EAI";
@@ -629,7 +638,12 @@ function telaConc(id){
       ${campo("c_cimento","Cimento",e.cimento)}
       ${campoNum("c_slumpEsp","Slump especificado",e.slumpEsp,"cm")}
       ${campoNum("c_tolSlump","Tolerância",e.tolSlump,"± cm")}
+      <label class="f">Lançamento<select id="c_lancamento">${opts(["Convencional","Bombeado"],e.lancamento||"Convencional","Escolha")}</select></label>
     </div></section>
+    <h2>Dosagem por m³</h2>
+    <section class="card"><div class="grid g3">
+      ${DOSAGEM.map(([k,rot])=>campo("c_"+k,rot,e[k]||"")).join("")}
+    </div><p class="note">Vem do traço escolhido. Confira com a nota fiscal e corrija aqui se for diferente.</p></section>
     <h2>Caminhão</h2>
     <section class="card"><div class="grid g3">
       ${campoNum("c_slump","Slump medido",e.slump,"cm")}
@@ -643,10 +657,11 @@ function telaConc(id){
       ${campo("c_moldador","Moldador",e.moldador)}
     </div><div class="calc" id="concCalc"></div></section>
     ${rodapeEnsaio(e)}`;
-  const campos=["registro","data","local","rua","estrutura","elemento","traco","concreteira","fck","cimento","slumpEsp","tolSlump","slump","cps","idades","nf","placa","volume","acumulado","hDosagem","hChegada","hInicio","hTermino","moldador"];
+  const campos=["registro","data","local","rua","estrutura","elemento","traco","concreteira","fck","cimento","slumpEsp","tolSlump","lancamento",...DOSAGEM.map(([k])=>k),"slump","cps","idades","nf","placa","volume","acumulado","hDosagem","hChegada","hInicio","hTermino","moldador"];
   campos.forEach(k=>{const el=$("#c_"+k);if(!el)return;el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{e[k]=el.value;tocou(e);
     if(k==="traco"){const t=DB.cad.tracos.find(x=>x.nome===el.value);if(t){e.concreteira=t.concreteira;e.fck=fmtIn(t.fck);e.cimento=t.cimento;e.slumpEsp=fmtIn(t.slump);e.tolSlump=fmtIn(t.tolSlump);
-      ["concreteira","fck","cimento","slumpEsp","tolSlump"].forEach(x=>$("#c_"+x).value=e[x]);}}
+      DOSAGEM.forEach(([x])=>e[x]=t[x]||"");
+      ["concreteira","fck","cimento","slumpEsp","tolSlump",...DOSAGEM.map(([x])=>x)].forEach(x=>$("#c_"+x).value=e[x]);}}
     if(k==="registro")$("#titulo").textContent=tit();
     salvar();atualizarConc(e);});});
   document.querySelectorAll("[data-agora]").forEach(b=>b.onclick=()=>{const k=b.dataset.agora;e[k]=agora();$("#c_"+k).value=e[k];tocou(e);salvar();atualizarConc(e);});
@@ -827,8 +842,8 @@ function telaCad(){
         <td><button class="btn small" type="button" data-rmmat="${i}" aria-label="Remover material">×</button></td></tr>`).join("")}
     </tbody></table></div><div><button class="btn small" type="button" id="addMat">+ Material</button></div></section>
     <h2>Traços de concreto</h2>
-    <section class="card"><div class="tblwrap"><table class="lt" style="min-width:560px"><thead><tr><th>Nome</th><th>Concreteira</th><th>fck</th><th>Cimento</th><th>Slump</th><th>±</th><th></th></tr></thead><tbody>
-      ${c.tracos.map((t,i)=>`<tr>${["nome","concreteira","fck","cimento","slump","tolSlump"].map(k=>`<td><input data-tr="${i}" data-k="${k}" ${["fck","slump","tolSlump"].includes(k)?'class="num" inputmode="decimal"':""} value="${esc(fmtIn(t[k]))}"></td>`).join("")}
+    <section class="card"><div class="tblwrap"><table class="lt" style="min-width:1400px"><thead><tr><th>Nome</th><th>Concreteira</th><th>fck</th><th>Cimento</th><th>Slump</th><th>±</th>${DOSAGEM.map(([,r])=>`<th>${r}</th>`).join("")}<th></th></tr></thead><tbody>
+      ${c.tracos.map((t,i)=>`<tr>${["nome","concreteira","fck","cimento","slump","tolSlump",...DOSAGEM.map(([k])=>k)].map(k=>`<td><input data-tr="${i}" data-k="${k}" ${["fck","slump","tolSlump"].includes(k)?'class="num" inputmode="decimal"':""} value="${esc(fmtIn(t[k]))}"></td>`).join("")}
         <td><button class="btn small" type="button" data-rmtr="${i}" aria-label="Remover traço">×</button></td></tr>`).join("")}
     </tbody></table></div><div><button class="btn small" type="button" id="addTr">+ Traço</button></div></section>
     <h2>Padrões</h2>
@@ -867,7 +882,7 @@ function telaCad(){
   document.querySelectorAll("[data-rmmat]").forEach(b=>b.onclick=()=>{c.materiais.splice(+b.dataset.rmmat,1);salvar();render();});
   document.querySelectorAll("[data-tr]").forEach(el=>el.oninput=()=>{c.tracos[+el.dataset.tr][el.dataset.k]=el.value;salvar();});
   document.querySelectorAll("[data-rmtr]").forEach(b=>b.onclick=()=>{c.tracos.splice(+b.dataset.rmtr,1);salvar();render();});
-  $("#addTr").onclick=()=>{c.tracos.push({nome:"",concreteira:"",fck:"",cimento:"",slump:"",tolSlump:""});salvar();render();};
+  $("#addTr").onclick=()=>{c.tracos.push(Object.assign({nome:"",concreteira:"",fck:"",cimento:"",slump:"",tolSlump:""},Object.fromEntries(DOSAGEM.map(([k])=>[k,""]))));salvar();render();};
   $("#addMat").onclick=()=>{c.materiais.push({nome:"",procedencia:"",otima:"",densLab:"",densReal:""});salvar();render();};
   [["p_areiaCone","areiaCone"],["p_densAreia","densAreia"],["p_kViga","kViga"],["p_li","li"],["p_areaBandeja","areaBandeja"],["p_tolTaxa","tolTaxa"],["p_projEAI","projEAI"],["p_projRR","projRR"],["p_projB","projB"],["p_projC","projC"],["p_tolBetume","tolBetume"],["p_usinaCBUQ","usinaCBUQ"]].forEach(([id,k])=>$("#"+id).oninput=ev=>{c.cfg[k]=ev.target.value;salvar();});
   $("#p_emp").oninput=ev=>{c.empreiteiras=ev.target.value.split(",").map(s=>s.trim()).filter(Boolean);salvar();};
@@ -895,7 +910,8 @@ function pacote(lista){
         const c=calcConc(e);
         Object.assign(base,{local:e.local,estrutura:e.estrutura,elemento:e.elemento,lado:e.lado,traco:e.traco,concreteira:e.concreteira,fck:n2(e.fck),cimento:e.cimento,
           slumpEsp:n2(e.slumpEsp),tolSlump:n2(e.tolSlump),slump:n2(e.slump),cps:n2(e.cps),idades:e.idades,nf:e.nf,placa:e.placa,volume:n2(e.volume),acumulado:n2(e.acumulado),
-          hDosagem:e.hDosagem,hChegada:e.hChegada,hInicio:e.hInicio,hTermino:e.hTermino,moldador:e.moldador,calc:{slumpOk:c.slumpOk,tempoMin:ok(c.tempo)?c.tempo:null}});
+          hDosagem:e.hDosagem,hChegada:e.hChegada,hInicio:e.hInicio,hTermino:e.hTermino,moldador:e.moldador,
+          lancamento:e.lancamento||"",dosagem:Object.fromEntries(DOSAGEM.map(([k])=>[k,e[k]||""])),calc:{slumpOk:c.slumpOk,tempoMin:ok(c.tempo)?c.tempo:null}});
       } else if(e.tipo==="taxa"){
         Object.assign(base,{emulsao:e.material,proj:n2(e.proj),tolerancia:n2(DB.cad.cfg.tolTaxa),
           bandejas:e.bandejas.filter(b=>ok(num(b.total))).map(b=>{const c=calcBandeja(e,b);return {estaca:b.estaca,posicao:b.posicao,temp:n2(b.temp),

@@ -408,13 +408,31 @@ try {
         $ws.Name = $nome
         $ws.Range("B12:I26").ClearContents() | Out-Null
         $ws.Range("K12:Q26").ClearContents() | Out-Null
-        $ws.Range("J12").Formula = '=IF(I12="","",I12-F12)'
+        for ($l = 12; $l -le 26; $l++) { $ws.Range("J$l").Formula = "=IF(OR(F$l=`"`",I$l=`"`"),`"`",MOD(I$l-F$l,1))" }
         Escreve $ws "J4" ("$($e.concreteira)".ToUpper())
         Escreve $ws "P4" (DataOA $e.data)
         if ($e.rua) { Escreve $ws "C5" ("RUA: " + "$($e.rua)".ToUpper()) }
         Escreve $ws "AE4" $e.fck
         Escreve $ws "G8" $e.fck
         Escreve $ws "L7" $e.cimento
+        # dosagem e especificação: vêm do app (o texto fixo do modelo é sempre substituído; campo vazio fica só com o rótulo)
+        $d = $e.dosagem
+        if ($d) {
+          $bomb = "$($e.lancamento)" -match '^bomb'
+          $ws.Range("B7").Value2 = "LANÇAMENTO:       ( $(if ($bomb) {' '} else {'X'}) )  CONVENCIONAL      ( $(if ($bomb) {'X'} else {' '}) )  BOMBEADO"
+          $ws.Range("B8").Value2 = "DIÂMETRO MÁXIMO DO  AGREGADO: " + $(if ("$($d.dmax)") { "$($d.dmax)mm" } else { "" })
+          $ws.Range("B9").Value2 = "ABATIMENTO ESPECIFICO: " + $(if ("$($e.slumpEsp)") { "$($e.slumpEsp) + - $($e.tolSlump)" } else { "" })
+          $ws.Range("L8").Value2 = "$($d.aditivo)".ToUpper()
+          $vt = if ("$($e.acumulado)") { $e.acumulado } else { $e.volume }
+          $ws.Range("L9").Value2 = $(if ("$vt") { ("$vt" -replace '\.', ',') + "m³" } else { "" })
+          $ws.Range("N7").Value2 = "CIMENTO (Kg): $($d.dCimento)"
+          $ws.Range("P7").Value2 = "PEDRA (Kg): " + $(if ("$($d.dPedra0)") { "0-$($d.dPedra0)" } else { "" })
+          $ws.Range("N8").Value2 = "AREIA (Kg): $($d.dAreia)"
+          $ws.Range("P8").Value2 = "ÁGUA (Kg): $($d.dAgua)"
+          $ws.Range("N9").Value2 = "PEDRA (Kg): " + $(if ("$($d.dPedra1)") { "1- $($d.dPedra1)" } else { "" })
+          $ws.Range("P9").Value2 = "ADITIVO (Kg): $($d.dAditivo)"
+        }
+        else { Log "AVISO: $rot veio de uma versão antiga do app, sem dosagem; a aba ficou com o texto do modelo" }
         Escreve $ws "B12" (NumOuTexto "$($e.registro)")
         Escreve $ws "C12" $e.cps
         Escreve $ws "D12" $e.slump
