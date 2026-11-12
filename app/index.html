@@ -855,7 +855,7 @@ function telaCad(){
     <section class="card">
       <span class="note">${envioCfg().url?"Configurado: o botão Enviar para o PC manda os ensaios com um toque.":"Não configurado. Abra no celular o link de configuração que você recebeu, ou cole abaixo o endereço e a chave."}</span>
       ${campo("p_envUrl","Endereço do envio (script.google.com)",envioCfg().url||"",'full inputmode="url" autocomplete="off"')}
-      ${campo("p_envChave","Chave",envioCfg().chave||"",'full autocomplete="off"')}
+      ${campo("p_envChave","Senha de envio",envioCfg().chave||"",'full autocomplete="off"')}
     </section>`;
   const gravaEnvio=()=>envioSalvar({url:$("#p_envUrl").value.trim(),chave:$("#p_envChave").value.trim()});
   $("#p_envUrl").oninput=gravaEnvio;$("#p_envChave").oninput=gravaEnvio;
@@ -920,14 +920,20 @@ function aammdd(){const d=new Date();return String(d.getFullYear()).slice(2)+Str
 const ENVIO_KEY="lab-campo-envio";
 function envioCfg(){try{return JSON.parse(localStorage.getItem(ENVIO_KEY)||"{}")||{};}catch(e){return {};}}
 function envioSalvar(o){try{localStorage.setItem(ENVIO_KEY,JSON.stringify(o));}catch(e){}}
-// link de configuração: .../?envio=<url do script>&chave=<chave>  (abrir uma vez no celular)
+// link de configuração: .../?envio=<url do script>  (abrir uma vez no celular; a senha é pedida no 1º envio)
 (function(){try{const q=new URLSearchParams(location.search);const u=q.get("envio");
   if(u&&/^https:\/\/script\.google\.com\//.test(u)){envioSalvar({url:u,chave:q.get("chave")||""});history.replaceState(null,"",location.pathname);
     setTimeout(()=>toast("Envio direto para o PC configurado"),600);}}catch(e){}})();
 async function enviarPC(nome,json){
   const c=envioCfg();
+  if(!c.chave){
+    const s=(prompt("Senha de envio (peça ao Takashi). Ela fica guardada neste celular.")||"").trim();
+    if(!s)throw new Error("sem senha");
+    c.chave=s;envioSalvar(c);
+  }
   const r=await fetch(c.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({chave:c.chave||"",nome:nome,conteudo:json}),redirect:"follow"});
   const j=await r.json();
+  if(j&&!j.ok&&/chave|senha/i.test(j.erro||"")){envioSalvar({url:c.url,chave:""});throw new Error("senha errada; toque de novo para digitar");}
   if(!j||!j.ok)throw new Error(j&&j.erro||"resposta inesperada");
   return j;
 }
