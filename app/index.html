@@ -922,9 +922,16 @@ function telaExport(){
     </section>`;
   const marcar=()=>{sel.forEach(e=>e.status="exportado");salvar();};
   $("#exBaixar").onclick=()=>{try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));a.download=nome;document.body.appendChild(a);a.click();a.remove();marcar();toast("Arquivo salvo em Downloads");}catch(err){toast("Não foi possível salvar. Use Copiar texto.");}};
-  $("#exShare").onclick=async()=>{try{const f=new File([json],nome,{type:"application/json"});
-      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:nome});marcar();toast("Enviado");}
-      else{await navigator.share({title:nome,text:json});marcar();toast("Enviado");}}catch(err){if(err&&err.name!=="AbortError")toast("Enviar não está disponível aqui. Use Salvar arquivo ou Copiar texto.");}};
+  $("#exShare").onclick=async()=>{
+    if(!navigator.share){toast("Este navegador não envia arquivos. Abra o app no Chrome ou use Salvar arquivo.");return;}
+    // o Android só compartilha alguns tipos de arquivo (.json não entra): vai como texto, e o lançador aceita .json.txt
+    const tentativas=[new File([json],nome+".txt",{type:"text/plain"}),new File([json],nome,{type:"application/json"})];
+    try{
+      for(const f of tentativas){
+        if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:f.name});marcar();toast("Enviado");return;}
+      }
+      toast("Este aparelho não envia arquivos pelo navegador. Use Salvar arquivo e mande pelo Drive.");
+    }catch(err){if(err&&err.name!=="AbortError")toast("Não foi possível enviar ("+(err&&err.name||"erro")+"). Use Salvar arquivo.");}};
   $("#exCopiar").onclick=()=>{const t=$("#exTxt");navigator.clipboard?.writeText(json).then(()=>toast("Texto copiado"),()=>{t.select();toast("Selecionado: use Copiar do teclado");})??(t.select(),toast("Selecionado: use Copiar do teclado"));};
   $("#exMarcar").onclick=()=>{marcar();toast("Marcados como exportados");ir("lista");};
   setBar(null);

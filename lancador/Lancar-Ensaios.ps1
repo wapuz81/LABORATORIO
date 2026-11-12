@@ -22,7 +22,8 @@ function MapaCfg($nome, $chave) { $m = Valor $cfg $nome; return (Valor $m $chave
 # ---------- arquivos de entrada ----------
 $entrada = $cfg.pastaEntrada
 if (-not (Test-Path $entrada)) { throw "Pasta de entrada não encontrada: $entrada" }
-$jsons = Get-ChildItem -Path $entrada -Filter *.json -File | Sort-Object Name
+# o app envia pelo Android como "... .json.txt" (o Android não compartilha .json)
+$jsons = @(Get-ChildItem -Path $entrada -File | Where-Object { $_.Name -like "*.json" -or $_.Name -like "*.json.txt" } | Sort-Object Name)
 if (-not $jsons) { Log "Nenhum arquivo .json em $entrada. Nada a fazer."; Pausa; exit }
 
 $registroLanc = Join-Path $entrada "lancados.csv"
