@@ -2,9 +2,9 @@
 # Chamado pela tarefa agendada "Lancador Ensaios Campo" a cada 5 minutos.
 # Se houver arquivo .json novo na ENTRADA (enviado pelo app via Drive), roda o lançador e mostra o resultado.
 # Só trabalha no modo "gravar". Não faz nada se alguma planilha estiver aberta no Excel.
-param([string]$Pasta = $PSScriptRoot)
+param([string]$Pasta = $PSScriptRoot, [switch]$SemAviso)   # -SemAviso: escreve o aviso no console em vez de abrir janela (para teste)
 $ErrorActionPreference = "Stop"
-function Aviso($txt, $icone = 64) { try { (New-Object -ComObject WScript.Shell).Popup($txt, 0, "Lançador de ensaios de campo", $icone + 4096) | Out-Null } catch {} }
+function Aviso($txt, $icone = 64) { if ($SemAviso) { Write-Output "AVISO[$icone]: $txt"; return }; try { (New-Object -ComObject WScript.Shell).Popup($txt, 0, "Lançador de ensaios de campo", $icone + 4096) | Out-Null } catch {} }
 
 $mutex = New-Object System.Threading.Mutex($false, "LancadorEnsaiosCampo")
 if (-not $mutex.WaitOne(0)) { exit }
