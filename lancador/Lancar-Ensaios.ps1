@@ -215,7 +215,8 @@ function GraficosBenkelman($ws, $qtd) {
     $ax = $ch.Axes(1); $ax.TickLabels.Font.Size = 8
   }
 }
-function GraficoBetume($ws) {
+function GraficoBetume($ws, [switch]$SoVisual) {
+  # -SoVisual: só refaz o gráfico/impressão, sem mexer em nenhum dado da ficha (aba MODELO e abas já lançadas)
   # granulometria: dispersão com eixo das peneiras em escala log (como na ficha impressa); só as peneiras da faixa
   if ($ws.ChartObjects().Count -lt 1) { return }
   $lin = @()
@@ -226,13 +227,14 @@ function GraficoBetume($ws) {
   }
   if (-not $lin) { return }
   # peneiras que não são da faixa (mín e máx 0%): deixa a linha em branco na tabela (a abertura some junto)
-  for ($r = 15; $r -le 27; $r++) {
+  if (-not $SoVisual) { for ($r = 15; $r -le 27; $r++) {
     if ($lin -notcontains $r -and ($ws.Range("K$r").Value2 -is [double]) -and ([double]$ws.Range("K$r").Value2) -eq 0 -and ([double]$ws.Range("J$r").Value2) -eq 0) {
       $ws.Range("J$r").MergeArea.ClearContents() | Out-Null; $ws.Range("K$r").MergeArea.ClearContents() | Out-Null
     }
-  }
+  } }
   # peneiras da faixa acima da primeira que reteve material passam 100%: retido acumulado 0
   foreach ($r in $lin) {
+    if ($SoVisual) { break }
     if ("$($ws.Range("C$r").Text)" -ne "") { break }
     $ws.Range("C$r").Value2 = 0
     $ws.Range("D$r").Formula = "=IF(`$C$r=`"`",`"`",C$r/`$E`$12)"
@@ -258,26 +260,37 @@ function GraficoBetume($ws) {
   }
   # sem suavizar: no eixo log a curva suavizada passava de 100% e cruzava os limites (não fica "de acordo com o resultado")
   foreach ($s in @($mn, $mx, $a)) { if ($s) { $s.Smooth = $false } }
-  # rótulos das peneiras: o eixo log do Excel só mostra 0,01/0,1/1/10; uma série invisível em 0% (coluna auxiliar V,
-  # fora da área de impressão) leva como rótulo a abertura de cada peneira da faixa
-  foreach ($r in $lin) { $ws.Range("V$r").Value2 = 0 }
-  $pn = NovaSerie $ch "Peneiras" $x $ws.Range("V$($r1):V$r2")
+  # eixo das peneiras igual ao da ficha do Google: 0,08 0,1 0,2 0,4 0,6 0,8 1 2 4 6 8 10 20 40.
+  # O eixo log do Excel só põe números nas potências da base, então: log base 2 de 0,0625 a 64 (sem números nem grades),
+  # e uma série auxiliar em 0% (colunas W:X, fora da área de impressão) com um ponto em cada valor acima,
+  # rótulo embaixo e uma barra de erro vertical até 100% fazendo a linha de grade.
+  $marcas = @(0.08, 0.1, 0.2, 0.4, 0.6, 0.8, 1, 2, 4, 6, 8, 10, 20, 40)
+  for ($i = 0; $i -lt $marcas.Count; $i++) { $ws.Range("W$(15 + $i)").Value2 = $marcas[$i]; $ws.Range("X$(15 + $i)").Value2 = 0 }
+  $um = 14 + $marcas.Count
+  try { $ws.Range("V15:V27").ClearContents() | Out-Null } catch {}   # auxiliar da versão anterior
+  $pn = NovaSerie $ch "Peneiras" $ws.Range("W15:W$um") $ws.Range("X15:X$um")
   $pn.ChartType = -4169; $pn.MarkerStyle = -4142; $pn.Format.Line.Visible = 0
   $pn.HasDataLabels = $true
   $dl = $pn.DataLabels(); $dl.ShowValue = $false; $dl.ShowCategoryName = $true; $dl.Position = 1   # abaixo do ponto
   $dl.NumberFormat = "General"; $dl.Font.Size = 7
+  try {
+    $pn.ErrorBar(1, 2, 1, 1) | Out-Null                    # xlY, só para cima, valor fixo 1 (= 100%)
+    $eb = $pn.ErrorBars; $eb.EndStyle = 2                  # sem traço na ponta
+    $eb.Format.Line.ForeColor.RGB = 14277081; $eb.Format.Line.Weight = 0.5
+  } catch {}
   $ch.HasLegend = $false
   $ax = $ch.Axes(1)
-  $ax.ScaleType = -4133; $ax.LogBase = 10; $ax.MinimumScale = 0.01; $ax.MaximumScale = 100
-  $ax.CrossesAt = 0.01                                   # eixo vertical na esquerda (no log ele cruzava no 1)
-  $ax.HasMajorGridlines = $true; $ax.HasMinorGridlines = $true
-  $ax.MinorGridlines.Format.Line.ForeColor.RGB = 14277081   # cinza claro
-  $ax.TickLabelPosition = -4142                          # sem os números 0,01/0,1/...: valem os rótulos das peneiras
+  $ax.ScaleType = -4133; $ax.LogBase = 2; $ax.MinimumScale = 0.0625; $ax.MaximumScale = 64
+  $ax.CrossesAt = 0.0625                                 # eixo vertical na esquerda
+  $ax.HasMajorGridlines = $false; $ax.HasMinorGridlines = $false
+  $ax.TickLabelPosition = -4142                          # os números vêm dos rótulos da série auxiliar
+  try { $ax.MajorTickMark = -4142; $ax.MinorTickMark = -4142 } catch {}
   # título do eixo como caixa de texto no rodapé do gráfico: o título normal do eixo ficava na altura dos rótulos das peneiras
   $ax.HasTitle = $false
   try {
     $pa = $ch.PlotArea; $alt = $ch.ChartArea.Height - $pa.InsideTop - 34
     if ($alt -gt 50) { $pa.InsideHeight = $alt }
+    while ($ch.Shapes.Count -gt 0) { $ch.Shapes.Item(1).Delete() }   # caixa de uma rodada anterior (modelo já arrumado)
     $tb = $ch.Shapes.AddTextbox(1, $ch.ChartArea.Width / 2 - 60, $ch.ChartArea.Height - 16, 120, 14)
     $tb.TextFrame2.TextRange.Text = "PENEIRAS (mm)"; $tb.TextFrame2.TextRange.Font.Size = 8
     $tb.TextFrame2.TextRange.ParagraphFormat.Alignment = 2; $tb.TextFrame2.MarginTop = 0; $tb.TextFrame2.MarginBottom = 0
