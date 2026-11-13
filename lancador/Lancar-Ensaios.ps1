@@ -253,7 +253,8 @@ function GraficoBetume($ws) {
     $a.Format.Line.Visible = -1; $a.Format.Line.ForeColor.RGB = $AZUL; $a.Format.Line.Weight = 1.5
     $a.MarkerStyle = 8; $a.MarkerSize = 4; $a.MarkerForegroundColor = $AZUL; $a.MarkerBackgroundColor = $AZUL
   }
-  foreach ($s in @($mn, $mx, $a)) { if ($s) { $s.Smooth = $true } }
+  # sem suavizar: no eixo log a curva suavizada passava de 100% e cruzava os limites (não fica "de acordo com o resultado")
+  foreach ($s in @($mn, $mx, $a)) { if ($s) { $s.Smooth = $false } }
   # rótulos das peneiras: o eixo log do Excel só mostra 0,01/0,1/1/10; uma série invisível em 0% (coluna auxiliar V,
   # fora da área de impressão) leva como rótulo a abertura de cada peneira da faixa
   foreach ($r in $lin) { $ws.Range("V$r").Value2 = 0 }
