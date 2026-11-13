@@ -161,6 +161,86 @@ function AbaModelo($wb) {
   foreach ($s in $wb.Worksheets) { if ($s.Name -eq "MODELO") { return $s } }
   return $wb.Worksheets.Item($wb.Worksheets.Count)
 }
+# ---------- gráficos (padrão das fichas impressas: só as linhas com resultado, legível) ----------
+$AZUL = 66 + 133 * 256 + 244 * 65536     # 4285F4
+$VERMELHO = 255
+function NovaSerie($ch, $nome, $x, $y) {
+  $s = $ch.SeriesCollection().NewSeries()
+  $s.Name = [string]$nome
+  $s.Values = $y
+  $s.XValues = $x
+  return $s
+}
+function LimpaSeries($ch) { while ($ch.SeriesCollection().Count -gt 0) { $ch.SeriesCollection(1).Delete() | Out-Null } }
+function GraficosBenkelman($ws, $qtd) {
+  # três gráficos (LE, EIXO, LD), da esquerda para a direita; barras = deflexão, linha vermelha = admissível
+  $objs = @(); for ($i = 1; $i -le $ws.ChartObjects().Count; $i++) { $objs += $ws.ChartObjects($i) }
+  $objs = @($objs | Sort-Object { [double]$_.Left })
+  $mapa = @(@("LE","A","E","Q"), @("EIXO","F","J","R"), @("LD","K","O","S"))
+  $adm = 0.0; try { $adm = [double]$ws.Range("H5").Value2 } catch {}
+  for ($g = 0; $g -lt [math]::Min(3, $objs.Count); $g++) {
+    $lado, $cE, $cD, $cA = $mapa[$g]
+    $n = [int]$qtd[$lado]; $r2 = 11 + [math]::Max(1, $n)
+    $ch = $objs[$g].Chart
+    LimpaSeries $ch
+    $x = $ws.Range("$($cE)12:$cE$r2")
+    $b = NovaSerie $ch "Deflexão" $x $ws.Range("$($cD)12:$cD$r2")
+    $b.ChartType = 51                                   # colunas
+    $b.Format.Fill.Visible = -1; $b.Format.Fill.Solid(); $b.Format.Fill.ForeColor.RGB = $AZUL
+    $b.Format.Line.Visible = 0
+    if ($n -gt 0) {
+      $b.HasDataLabels = $true
+      $dl = $b.DataLabels(); $dl.Position = 2; $dl.NumberFormatLinked = $true   # acima da barra, formato da célula
+      $dl.Font.Size = 8; $dl.Font.Bold = $true; $dl.Font.Color = $AZUL
+    }
+    $l = NovaSerie $ch "Admissível" $x $ws.Range("$($cA)12:$cA$r2")
+    $l.ChartType = 4                                    # linha
+    $l.MarkerStyle = -4142
+    $l.Format.Line.Visible = -1; $l.Format.Line.ForeColor.RGB = $VERMELHO; $l.Format.Line.Weight = 2
+    $ch.HasLegend = $false
+    try { $ch.ChartGroups(1).GapWidth = 60 } catch {}
+    $maior = $adm
+    for ($r = 12; $r -le $r2; $r++) { $v = $ws.Range("$cD$r").Value2; if ($v -is [double] -and $v -gt $maior) { $maior = $v } }
+    $ay = $ch.Axes(2); $ay.MinimumScale = 0
+    if ($maior -le 270) { $ay.MaximumScale = 300 } else { $ay.MaximumScale = [math]::Ceiling(($maior * 1.15) / 50) * 50 }
+    $ay.MajorUnit = 100
+    $ax = $ch.Axes(1); $ax.TickLabels.Font.Size = 8
+  }
+}
+function GraficoBetume($ws) {
+  # granulometria: dispersão com eixo das peneiras em escala log (como na ficha impressa); só as peneiras da faixa
+  if ($ws.ChartObjects().Count -lt 1) { return }
+  $lin = @()
+  for ($r = 15; $r -le 27; $r++) { if (($ws.Range("A$r").Value2 -is [double]) -and ($ws.Range("J$r").Value2 -is [double])) { $lin += $r } }
+  if (-not $lin) { return }
+  $r1 = ($lin | Measure-Object -Minimum).Minimum; $r2 = ($lin | Measure-Object -Maximum).Maximum
+  $am = @(); foreach ($r in $lin) { if ($ws.Range("I$r").Value2 -is [double]) { $am += $r } }
+  $ch = $ws.ChartObjects(1).Chart
+  LimpaSeries $ch
+  $x = $ws.Range("A$($r1):A$r2")
+  $mn = NovaSerie $ch "Mínima" $x $ws.Range("J$($r1):J$r2")
+  $mx = NovaSerie $ch "Máxima" $x $ws.Range("K$($r1):K$r2")
+  $a = $null
+  if ($am) { $a1 = ($am | Measure-Object -Minimum).Minimum; $a2 = ($am | Measure-Object -Maximum).Maximum
+             $a = NovaSerie $ch "Amostra" $ws.Range("A$($a1):A$a2") $ws.Range("I$($a1):I$a2") }
+  $ch.ChartType = 74                                    # dispersão com linhas e marcadores
+  foreach ($s in @($mn, $mx)) { $s.MarkerStyle = -4142; $s.Format.Line.Visible = -1; $s.Format.Line.ForeColor.RGB = $VERMELHO; $s.Format.Line.Weight = 1.75 }
+  if ($a) {
+    $a.Format.Line.Visible = -1; $a.Format.Line.ForeColor.RGB = $AZUL; $a.Format.Line.Weight = 1.5
+    $a.MarkerStyle = 8; $a.MarkerSize = 4; $a.MarkerForegroundColor = $AZUL; $a.MarkerBackgroundColor = $AZUL
+  }
+  $ch.HasLegend = $false
+  $ax = $ch.Axes(1)
+  $ax.ScaleType = -4133; $ax.LogBase = 10; $ax.MinimumScale = 0.01; $ax.MaximumScale = 100
+  $ax.HasMajorGridlines = $true; $ax.HasMinorGridlines = $true
+  $ax.MinorGridlines.Format.Line.ForeColor.RGB = 14277081   # cinza claro
+  $ax.TickLabels.Font.Size = 8
+  $ax.HasTitle = $true; $ax.AxisTitle.Text = "PENEIRAS (mm)"; $ax.AxisTitle.Font.Size = 8; $ax.AxisTitle.Font.Bold = $false
+  $ay = $ch.Axes(2)
+  $ay.MinimumScale = 0; $ay.MaximumScale = 1; $ay.MajorUnit = 0.1
+  $ay.HasMajorGridlines = $true; $ay.TickLabels.NumberFormatLinked = $false; $ay.TickLabels.NumberFormatLocal = "0%"; $ay.TickLabels.Font.Size = 8
+  $ay.HasTitle = $true; $ay.AxisTitle.Text = "MÉDIA PASSANTE (%)"; $ay.AxisTitle.Font.Size = 8; $ay.AxisTitle.Font.Bold = $false
+}
 function CopiaAba($wb, $modelo) {
   # devolve a aba nova (achada pelo nome, não pela posição) e garante que ela fica no fim
   $antes = @{}; foreach ($s in $wb.Worksheets) { $antes[$s.Name] = $true }
@@ -372,6 +452,9 @@ try {
             $l++
           }
         }
+        $qtd = @{}; foreach ($lado in "LE","EIXO","LD") { $qtd[$lado] = @($e.leituras.$lado).Count }
+        $ws.Calculate()
+        try { GraficosBenkelman $ws $qtd } catch { Log "   aviso: não consegui ajustar os gráficos da aba '$nome' ($($_.Exception.Message))" }
         # ===== resumo: aba Viga. Benk — uma linha por estaca, LE / EIXO / LD lado a lado =====
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
         $wr = $wbRes.Worksheets.Item("Viga. Benk")
@@ -606,6 +689,7 @@ try {
             if ("$($ws.Range("A$l").Value2)" -like "OBSERVA*") { $ws.Range("A$l").Value2 = [string]("OBSERVAÇÃO: " + $(if ($e.obs) { $e.obs } else { "" })); break }
           }
           $ws.Calculate()
+          try { GraficoBetume $ws } catch { Log "   aviso: não consegui ajustar o gráfico da aba '$nome' ($($_.Exception.Message))" }
           }
           catch {
             # não deixa aba pela metade (senão ela vira o modelo do próximo lançamento)
