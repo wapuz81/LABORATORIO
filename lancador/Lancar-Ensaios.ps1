@@ -181,6 +181,7 @@ function GraficosBenkelman($ws, $qtd) {
   for ($g = 0; $g -lt [math]::Min(3, $objs.Count); $g++) {
     $lado, $cE, $cD, $cA = $mapa[$g]
     $n = [int]$qtd[$lado]; $r2 = 11 + [math]::Max(1, $n)
+    if ($n -eq 0) { $r2 = 27 }                          # ficha sem leitura (aba MODELO): quadro inteiro, só com a linha do admissível
     # cada gráfico no seu terço da ficha (LE A:E, Eixo F:J, LD K:O): no modelo eles tinham 360 pt e um invadia o outro
     try {
       $c1 = $ws.Range("$(@('A','F','K')[$g])28"); $c2 = $ws.Range("$(@('E','J','O')[$g])28")
@@ -201,10 +202,18 @@ function GraficosBenkelman($ws, $qtd) {
       if ($n -gt 8) { try { $dl.Font.Size = 7; $dl.Orientation = 90 } catch {} }
     }
     if ($n -gt 8) { try { $ca = $ch.Axes(1); $ca.TickLabels.Font.Size = 7; $ca.TickLabels.Orientation = 90; $ca.TickLabelSpacing = 1 } catch {} }
-    $l = NovaSerie $ch "Admissível" $x $ws.Range("$($cA)12:$cA$r2")
-    $l.ChartType = 4                                    # linha
-    $l.MarkerStyle = -4142
-    $l.Format.Line.Visible = -1; $l.Format.Line.ForeColor.RGB = $VERMELHO; $l.Format.Line.Weight = 2
+    # linha vermelha do admissível (H5) de ponta a ponta: valores fixos, não a coluna auxiliar, que fica vazia sem leitura
+    if ($adm -gt 0) {
+      $cnt = $r2 - 11
+      $l = $ch.SeriesCollection().NewSeries(); $l.Name = "Admissível"
+      $l.Values = [double[]](@($adm) * $cnt); $l.XValues = $x
+      $l.ChartType = 4                                  # linha
+      $l.Format.Line.Visible = -1; $l.Format.Line.ForeColor.RGB = $VERMELHO; $l.Format.Line.Weight = 2
+      if ($cnt -gt 1) { $l.MarkerStyle = -4142 }
+      else {                                            # uma estaca só: a linha teria um ponto; vira um traço vermelho largo
+        try { $l.MarkerStyle = -4115; $l.MarkerSize = 40; $l.MarkerForegroundColor = $VERMELHO; $l.MarkerBackgroundColor = $VERMELHO } catch {}
+      }
+    }
     $ch.HasLegend = $false
     try { $ch.ChartGroups(1).GapWidth = 60 } catch {}
     $maior = $adm
@@ -212,7 +221,7 @@ function GraficosBenkelman($ws, $qtd) {
   $ay = $ch.Axes(2); $ay.MinimumScale = 0
     if ($maior -le 270) { $ay.MaximumScale = 300 } else { $ay.MaximumScale = [math]::Ceiling(($maior * 1.15) / 50) * 50 }
     $ay.MajorUnit = 100
-    $ax = $ch.Axes(1); $ax.TickLabels.Font.Size = 8
+    $ax = $ch.Axes(1); if ($n -le 8) { $ax.TickLabels.Font.Size = 8 }
   }
 }
 function GraficoBetume($ws, [switch]$SoVisual) {
@@ -244,6 +253,8 @@ function GraficoBetume($ws, [switch]$SoVisual) {
   $ws.Calculate()
   $r1 = ($lin | Measure-Object -Minimum).Minimum; $r2 = ($lin | Measure-Object -Maximum).Maximum
   $am = @(); foreach ($r in $lin) { if ($ws.Range("I$r").Value2 -is [double]) { $am += $r } }
+  # gráfico enquadrado na largura da ficha (colunas A:K); no modelo ele passava da coluna K
+  try { $co = $ws.ChartObjects(1); $kk = $ws.Range("K1"); $co.Left = $ws.Range("A1").Left + 1; $co.Width = $kk.Left + $kk.Width - $co.Left - 2 } catch {}
   $ch = $ws.ChartObjects(1).Chart
   LimpaSeries $ch
   $x = $ws.Range("A$($r1):A$r2")
