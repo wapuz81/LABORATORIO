@@ -217,6 +217,21 @@ function GraficoBetume($ws) {
     if (($ws.Range("A$r").Value2 -is [double]) -and ($ws.Range("J$r").Value2 -is [double]) -and ($k -is [double]) -and $k -gt 0) { $lin += $r }
   }
   if (-not $lin) { return }
+  # peneiras que não são da faixa (mín e máx 0%): deixa a linha em branco na tabela (a abertura some junto)
+  for ($r = 15; $r -le 27; $r++) {
+    if ($lin -notcontains $r -and ($ws.Range("K$r").Value2 -is [double]) -and ([double]$ws.Range("K$r").Value2) -eq 0 -and ([double]$ws.Range("J$r").Value2) -eq 0) {
+      $ws.Range("J$r").MergeArea.ClearContents() | Out-Null; $ws.Range("K$r").MergeArea.ClearContents() | Out-Null
+    }
+  }
+  # peneiras da faixa acima da primeira que reteve material passam 100%: retido acumulado 0
+  foreach ($r in $lin) {
+    if ("$($ws.Range("C$r").Text)" -ne "") { break }
+    $ws.Range("C$r").Value2 = 0
+    $ws.Range("D$r").Formula = "=IF(`$C$r=`"`",`"`",C$r/`$E`$12)"
+    $ws.Range("E$r").Formula = "=IF(`$C$r=`"`",`"`",1-D$r)"
+    $ws.Range("I$r").Formula = "=IF(E$r=`"`",`"`",AVERAGE(H$r,E$r))"
+  }
+  $ws.Calculate()
   $r1 = ($lin | Measure-Object -Minimum).Minimum; $r2 = ($lin | Measure-Object -Maximum).Maximum
   $am = @(); foreach ($r in $lin) { if ($ws.Range("I$r").Value2 -is [double]) { $am += $r } }
   $ch = $ws.ChartObjects(1).Chart
@@ -233,6 +248,7 @@ function GraficoBetume($ws) {
     $a.Format.Line.Visible = -1; $a.Format.Line.ForeColor.RGB = $AZUL; $a.Format.Line.Weight = 1.5
     $a.MarkerStyle = 8; $a.MarkerSize = 4; $a.MarkerForegroundColor = $AZUL; $a.MarkerBackgroundColor = $AZUL
   }
+  foreach ($s in @($mn, $mx, $a)) { if ($s) { $s.Smooth = $true } }
   $ch.HasLegend = $false
   $ax = $ch.Axes(1)
   $ax.ScaleType = -4133; $ax.LogBase = 10; $ax.MinimumScale = 0.01; $ax.MaximumScale = 100
@@ -245,6 +261,8 @@ function GraficoBetume($ws) {
   $ay.MinimumScale = 0; $ay.MaximumScale = 1; $ay.MajorUnit = 0.1
   $ay.HasMajorGridlines = $true; $ay.TickLabels.NumberFormatLinked = $false; $ay.TickLabels.NumberFormatLocal = "0%"; $ay.TickLabels.Font.Size = 8
   $ay.HasTitle = $true; $ay.AxisTitle.Text = "MÉDIA PASSANTE (%)"; $ay.AxisTitle.Font.Size = 8; $ay.AxisTitle.Font.Bold = $false
+  # título (A1:K1 mesclado) cortava no Excel: quebra de linha e fonte um pouco menor
+  try { $t = $ws.Range("A1").MergeArea; $t.WrapText = $true; $t.Font.Size = 12; $t.VerticalAlignment = -4108 } catch {}
   # impressão: só a ficha (colunas A:K, até a linha das assinaturas), A4 retrato, 1 página
   $fim = 0
   for ($r = 40; $r -le 80; $r++) { if ("$($ws.Range("A$r").Text)$($ws.Range("H$r").Text)" -match 'LABORAT|ENGENHEIRO') { $fim = $r; break } }
@@ -255,14 +273,21 @@ function GraficoBetume($ws) {
 }
 function CoresDeflexao($ws) {
   # deflexão: a regra "maior que o admissível" pintava de vermelho as linhas vazias no Excel (texto vazio conta como maior).
-  # troca por "entre o admissível e 1000 x o admissível", que ignora texto; o verde (<= admissível) continua igual
-  $rg = $ws.Range("E12:E27,J12:J27,O12:O27")
-  for ($i = $rg.FormatConditions.Count; $i -ge 1; $i--) {
-    $fc = $rg.FormatConditions.Item($i)
-    try { if ($fc.Type -eq 1 -and $fc.Operator -eq 5) { $fc.Delete() } } catch {}
+  # refaz as duas regras por coluna: verde <= admissível; vermelho entre o admissível e 99999 (ignora texto vazio)
+  $ws.Range("E12:E27,J12:J27,O12:O27").FormatConditions.Delete() | Out-Null
+  foreach ($a in "E12:E27","J12:J27","O12:O27") {
+    $rg = $ws.Range($a)
+    $v = $rg.FormatConditions.Add(1, 8, '=$H$5')               # xlCellValue, xlLessEqual
+    $v.Interior.Color = 183 + 225 * 256 + 205 * 65536            # B7E1CD
+    $r = $rg.FormatConditions.Add(1, 1, '=$H$5', '99999')        # xlCellValue, xlBetween
+    $r.Interior.Color = 244 + 199 * 256 + 195 * 65536            # F4C7C3
   }
-  $nv = $rg.FormatConditions.Add(1, 1, '=$H$5', '=$H$5*1000')
-  $nv.Interior.Color = 244 + 199 * 256 + 195 * 65536     # F4C7C3
+}
+function ImpressaoViga($ws) {
+  # área de impressão: o quadro da ficha até a linha das assinaturas, A4 paisagem, 1 página
+  $fim = 0
+  for ($r = 28; $r -le 70; $r++) { if ("$($ws.Range("B$r").Text)$($ws.Range("J$r").Text)" -match 'Respons') { $fim = $r + 1; break } }
+  if ($fim) { $ps = $ws.PageSetup; $ps.PrintArea = "`$A`$1:`$O`$$fim"; $ps.Orientation = 2; $ps.Zoom = $false; $ps.FitToPagesWide = 1; $ps.FitToPagesTall = 1; $ps.CenterHorizontally = $true }
 }
 function CopiaAba($wb, $modelo) {
   # devolve a aba nova (achada pelo nome, não pela posição) e garante que ela fica no fim
@@ -478,6 +503,7 @@ try {
         $qtd = @{}; foreach ($lado in "LE","EIXO","LD") { $qtd[$lado] = @($e.leituras.$lado).Count }
         $ws.Calculate()
         try { CoresDeflexao $ws } catch { Log "   aviso: não consegui ajustar as cores da deflexão na aba '$nome' ($($_.Exception.Message))" }
+        try { ImpressaoViga $ws } catch { Log "   aviso: não consegui ajustar a impressão da aba '$nome' ($($_.Exception.Message))" }
         try { GraficosBenkelman $ws $qtd } catch { Log "   aviso: não consegui ajustar os gráficos da aba '$nome' ($($_.Exception.Message))" }
         # ===== resumo: aba Viga. Benk — uma linha por estaca, LE / EIXO / LD lado a lado =====
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
