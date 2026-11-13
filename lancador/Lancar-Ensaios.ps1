@@ -272,7 +272,7 @@ function GraficoBetume($ws, [switch]$SoVisual) {
   $pn.ChartType = -4169; $pn.MarkerStyle = -4142; $pn.Format.Line.Visible = 0
   $pn.HasDataLabels = $true
   $dl = $pn.DataLabels(); $dl.ShowValue = $false; $dl.ShowCategoryName = $true; $dl.Position = 1   # abaixo do ponto
-  $dl.NumberFormat = "General"; $dl.Font.Size = 7
+  $dl.NumberFormat = "General"; $dl.Font.Size = 8
   try {
     $pn.ErrorBar(1, 2, 1, 1) | Out-Null                    # xlY, só para cima, valor fixo 1 (= 100%)
     $eb = $pn.ErrorBars; $eb.EndStyle = 2                  # sem traço na ponta
