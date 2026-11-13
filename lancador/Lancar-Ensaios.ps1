@@ -201,11 +201,6 @@ function GraficosBenkelman($ws, $qtd) {
     try { $ch.ChartGroups(1).GapWidth = 60 } catch {}
     $maior = $adm
     for ($r = 12; $r -le $r2; $r++) { $v = $ws.Range("$cD$r").Value2; if ($v -is [double] -and $v -gt $maior) { $maior = $v } }
-    # rótulos das peneiras ficam logo abaixo do eixo: o título do eixo desce para baixo deles
-  try {
-    $pa = $ch.PlotArea; $pa.InsideHeight = $pa.InsideHeight - 14
-    $ax.AxisTitle.Top = $ch.ChartArea.Height - $ax.AxisTitle.Height - 2
-  } catch {}
   $ay = $ch.Axes(2); $ay.MinimumScale = 0
     if ($maior -le 270) { $ay.MaximumScale = 300 } else { $ay.MaximumScale = [math]::Ceiling(($maior * 1.15) / 50) * 50 }
     $ay.MajorUnit = 100
@@ -270,7 +265,16 @@ function GraficoBetume($ws) {
   $ax.HasMajorGridlines = $true; $ax.HasMinorGridlines = $true
   $ax.MinorGridlines.Format.Line.ForeColor.RGB = 14277081   # cinza claro
   $ax.TickLabelPosition = -4142                          # sem os números 0,01/0,1/...: valem os rótulos das peneiras
-  $ax.HasTitle = $true; $ax.AxisTitle.Text = "PENEIRAS (mm)"; $ax.AxisTitle.Font.Size = 8; $ax.AxisTitle.Font.Bold = $false
+  # título do eixo como caixa de texto no rodapé do gráfico: o título normal do eixo ficava na altura dos rótulos das peneiras
+  $ax.HasTitle = $false
+  try {
+    $pa = $ch.PlotArea; $alt = $ch.ChartArea.Height - $pa.InsideTop - 34
+    if ($alt -gt 50) { $pa.InsideHeight = $alt }
+    $tb = $ch.Shapes.AddTextbox(1, $ch.ChartArea.Width / 2 - 60, $ch.ChartArea.Height - 16, 120, 14)
+    $tb.TextFrame2.TextRange.Text = "PENEIRAS (mm)"; $tb.TextFrame2.TextRange.Font.Size = 8
+    $tb.TextFrame2.TextRange.ParagraphFormat.Alignment = 2; $tb.TextFrame2.MarginTop = 0; $tb.TextFrame2.MarginBottom = 0
+    $tb.Line.Visible = 0; $tb.Fill.Visible = 0
+  } catch { $ax.HasTitle = $true; $ax.AxisTitle.Text = "PENEIRAS (mm)"; $ax.AxisTitle.Font.Size = 8 }
   $ay = $ch.Axes(2)
   $ay.MinimumScale = 0; $ay.MaximumScale = 1; $ay.MajorUnit = 0.1
   $ay.HasMajorGridlines = $true; $ay.TickLabels.NumberFormatLinked = $false; $ay.TickLabels.NumberFormatLocal = "0%"; $ay.TickLabels.Font.Size = 8
@@ -290,6 +294,9 @@ function GraficoBetume($ws) {
 function CoresDeflexao($ws) {
   # deflexão: a regra "maior que o admissível" pintava de vermelho as linhas vazias no Excel (texto vazio conta como maior).
   # refaz as duas regras por coluna: verde <= admissível; vermelho entre o admissível e 99999 (ignora texto vazio)
+  # a aba só tem estas regras + duas quebradas (=#REF!, fundo branco) e regras "fantasma" que deixavam o 172,0 do Eixo
+  # branco no PDF (verde na tela): apaga tudo da aba e recria só as da deflexão
+  try { $ws.Cells.FormatConditions.Delete() | Out-Null } catch {}
   # uma área por vez: o Excel em português recusa pelo COM o endereço com vírgulas (0x800A03EC)
   foreach ($a in "E12:E27","J12:J27","O12:O27") {
     $rg = $ws.Range($a)
