@@ -201,7 +201,12 @@ function GraficosBenkelman($ws, $qtd) {
     try { $ch.ChartGroups(1).GapWidth = 60 } catch {}
     $maior = $adm
     for ($r = 12; $r -le $r2; $r++) { $v = $ws.Range("$cD$r").Value2; if ($v -is [double] -and $v -gt $maior) { $maior = $v } }
-    $ay = $ch.Axes(2); $ay.MinimumScale = 0
+    # rótulos das peneiras ficam logo abaixo do eixo: o título do eixo desce para baixo deles
+  try {
+    $pa = $ch.PlotArea; $pa.InsideHeight = $pa.InsideHeight - 14
+    $ax.AxisTitle.Top = $ch.ChartArea.Height - $ax.AxisTitle.Height - 2
+  } catch {}
+  $ay = $ch.Axes(2); $ay.MinimumScale = 0
     if ($maior -le 270) { $ay.MaximumScale = 300 } else { $ay.MaximumScale = [math]::Ceiling(($maior * 1.15) / 50) * 50 }
     $ay.MajorUnit = 100
     $ax = $ch.Axes(1); $ax.TickLabels.Font.Size = 8
@@ -272,7 +277,7 @@ function GraficoBetume($ws) {
   # título (A1:K1 mesclado) cortava no Excel: quebra de linha e fonte um pouco menor
   try { $t = $ws.Range("A1").MergeArea; $t.WrapText = $true; $t.Font.Size = 12; $t.VerticalAlignment = -4108 } catch {}
   # cabeçalho da linha 7 (massa da mistura, massa do papel, teor de ligante) saía cortado: quebra de linha e linha mais alta
-  try { $ws.Range("A7:K7").WrapText = $true; if ($ws.Rows(7).RowHeight -lt 30) { $ws.Rows(7).RowHeight = 30 } } catch {}
+  try { $ws.Range("A7:K7").WrapText = $true; if ($ws.Rows(7).RowHeight -lt 42) { $ws.Rows(7).RowHeight = 42 } } catch {}
   # impressão: só a ficha (colunas A:K, até a linha das assinaturas), A4 retrato, 1 página
   $fim = 0
   for ($r = 40; $r -le 80; $r++) { if ("$($ws.Range("A$r").Text)$($ws.Range("H$r").Text)" -match 'LABORAT|ENGENHEIRO') { $fim = $r; break } }
