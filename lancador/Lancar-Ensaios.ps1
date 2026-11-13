@@ -211,7 +211,11 @@ function GraficoBetume($ws) {
   # granulometria: dispersão com eixo das peneiras em escala log (como na ficha impressa); só as peneiras da faixa
   if ($ws.ChartObjects().Count -lt 1) { return }
   $lin = @()
-  for ($r = 15; $r -le 27; $r++) { if (($ws.Range("A$r").Value2 -is [double]) -and ($ws.Range("J$r").Value2 -is [double])) { $lin += $r } }
+  # peneiras da faixa: abertura numérica e máxima > 0 (as linhas fora da faixa dão 0% e derrubavam a linha do limite)
+  for ($r = 15; $r -le 27; $r++) {
+    $k = $ws.Range("K$r").Value2
+    if (($ws.Range("A$r").Value2 -is [double]) -and ($ws.Range("J$r").Value2 -is [double]) -and ($k -is [double]) -and $k -gt 0) { $lin += $r }
+  }
   if (-not $lin) { return }
   $r1 = ($lin | Measure-Object -Minimum).Minimum; $r2 = ($lin | Measure-Object -Maximum).Maximum
   $am = @(); foreach ($r in $lin) { if ($ws.Range("I$r").Value2 -is [double]) { $am += $r } }
@@ -232,6 +236,7 @@ function GraficoBetume($ws) {
   $ch.HasLegend = $false
   $ax = $ch.Axes(1)
   $ax.ScaleType = -4133; $ax.LogBase = 10; $ax.MinimumScale = 0.01; $ax.MaximumScale = 100
+  $ax.CrossesAt = 0.01                                   # eixo vertical na esquerda (no log ele cruzava no 1)
   $ax.HasMajorGridlines = $true; $ax.HasMinorGridlines = $true
   $ax.MinorGridlines.Format.Line.ForeColor.RGB = 14277081   # cinza claro
   $ax.TickLabels.Font.Size = 8
@@ -240,6 +245,24 @@ function GraficoBetume($ws) {
   $ay.MinimumScale = 0; $ay.MaximumScale = 1; $ay.MajorUnit = 0.1
   $ay.HasMajorGridlines = $true; $ay.TickLabels.NumberFormatLinked = $false; $ay.TickLabels.NumberFormatLocal = "0%"; $ay.TickLabels.Font.Size = 8
   $ay.HasTitle = $true; $ay.AxisTitle.Text = "MÉDIA PASSANTE (%)"; $ay.AxisTitle.Font.Size = 8; $ay.AxisTitle.Font.Bold = $false
+  # impressão: só a ficha (colunas A:K, até a linha das assinaturas), A4 retrato, 1 página
+  $fim = 0
+  for ($r = 40; $r -le 80; $r++) { if ("$($ws.Range("A$r").Text)$($ws.Range("H$r").Text)" -match 'LABORAT|ENGENHEIRO') { $fim = $r; break } }
+  if ($fim) {
+    $ps = $ws.PageSetup
+    $ps.PrintArea = "`$A`$1:`$K`$$fim"; $ps.Orientation = 1; $ps.Zoom = $false; $ps.FitToPagesWide = 1; $ps.FitToPagesTall = 1; $ps.CenterHorizontally = $true
+  }
+}
+function CoresDeflexao($ws) {
+  # deflexão: a regra "maior que o admissível" pintava de vermelho as linhas vazias no Excel (texto vazio conta como maior).
+  # troca por "entre o admissível e 1000 x o admissível", que ignora texto; o verde (<= admissível) continua igual
+  $rg = $ws.Range("E12:E27,J12:J27,O12:O27")
+  for ($i = $rg.FormatConditions.Count; $i -ge 1; $i--) {
+    $fc = $rg.FormatConditions.Item($i)
+    try { if ($fc.Type -eq 1 -and $fc.Operator -eq 5) { $fc.Delete() } } catch {}
+  }
+  $nv = $rg.FormatConditions.Add(1, 1, '=$H$5', '=$H$5*1000')
+  $nv.Interior.Color = 244 + 199 * 256 + 195 * 65536     # F4C7C3
 }
 function CopiaAba($wb, $modelo) {
   # devolve a aba nova (achada pelo nome, não pela posição) e garante que ela fica no fim
@@ -454,6 +477,7 @@ try {
         }
         $qtd = @{}; foreach ($lado in "LE","EIXO","LD") { $qtd[$lado] = @($e.leituras.$lado).Count }
         $ws.Calculate()
+        try { CoresDeflexao $ws } catch { Log "   aviso: não consegui ajustar as cores da deflexão na aba '$nome' ($($_.Exception.Message))" }
         try { GraficosBenkelman $ws $qtd } catch { Log "   aviso: não consegui ajustar os gráficos da aba '$nome' ($($_.Exception.Message))" }
         # ===== resumo: aba Viga. Benk — uma linha por estaca, LE / EIXO / LD lado a lado =====
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
