@@ -265,7 +265,7 @@ function GraficoBetume($ws, [switch]$SoVisual) {
   # e uma série auxiliar em 0% (colunas W:X, fora da área de impressão) com um ponto em cada valor acima,
   # rótulo embaixo e uma barra de erro vertical até 100% fazendo a linha de grade.
   $marcas = @(0.08, 0.1, 0.2, 0.4, 0.6, 0.8, 1, 2, 4, 6, 8, 10, 20, 40)
-  for ($i = 0; $i -lt $marcas.Count; $i++) { $ws.Range("W$(15 + $i)").Value2 = $marcas[$i]; $ws.Range("X$(15 + $i)").Value2 = 0 }
+  for ($i = 0; $i -lt $marcas.Count; $i++) { $ws.Range("W$(15 + $i)").Value2 = [double]$marcas[$i]; $ws.Range("X$(15 + $i)").Value2 = 0 }
   $um = 14 + $marcas.Count
   try { $ws.Range("V15:V27").ClearContents() | Out-Null } catch {}   # auxiliar da versão anterior
   $pn = NovaSerie $ch "Peneiras" $ws.Range("W15:W$um") $ws.Range("X15:X$um")
