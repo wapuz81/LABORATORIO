@@ -181,6 +181,11 @@ function GraficosBenkelman($ws, $qtd) {
   for ($g = 0; $g -lt [math]::Min(3, $objs.Count); $g++) {
     $lado, $cE, $cD, $cA = $mapa[$g]
     $n = [int]$qtd[$lado]; $r2 = 11 + [math]::Max(1, $n)
+    # cada gráfico no seu terço da ficha (LE A:E, Eixo F:J, LD K:O): no modelo eles tinham 360 pt e um invadia o outro
+    try {
+      $c1 = $ws.Range("$(@('A','F','K')[$g])28"); $c2 = $ws.Range("$(@('E','J','O')[$g])28")
+      $objs[$g].Left = $c1.Left + 1; $objs[$g].Width = $c2.Left + $c2.Width - $c1.Left - 2
+    } catch {}
     $ch = $objs[$g].Chart
     LimpaSeries $ch
     $x = $ws.Range("$($cE)12:$cE$r2")
