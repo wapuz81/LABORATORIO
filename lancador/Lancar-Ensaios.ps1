@@ -161,6 +161,161 @@ function AbaModelo($wb) {
   foreach ($s in $wb.Worksheets) { if ($s.Name -eq "MODELO") { return $s } }
   return $wb.Worksheets.Item($wb.Worksheets.Count)
 }
+# ---------- gráficos (padrão das fichas impressas: só as linhas com resultado, legível) ----------
+$AZUL = 66 + 133 * 256 + 244 * 65536     # 4285F4
+$VERMELHO = 255
+function NovaSerie($ch, $nome, $x, $y) {
+  $s = $ch.SeriesCollection().NewSeries()
+  $s.Name = [string]$nome
+  $s.Values = $y
+  $s.XValues = $x
+  return $s
+}
+function LimpaSeries($ch) { while ($ch.SeriesCollection().Count -gt 0) { $ch.SeriesCollection(1).Delete() | Out-Null } }
+function GraficosBenkelman($ws, $qtd) {
+  # três gráficos (LE, EIXO, LD), da esquerda para a direita; barras = deflexão, linha vermelha = admissível
+  $objs = @(); for ($i = 1; $i -le $ws.ChartObjects().Count; $i++) { $objs += $ws.ChartObjects($i) }
+  $objs = @($objs | Sort-Object { [double]$_.Left })
+  $mapa = @(@("LE","A","E","Q"), @("EIXO","F","J","R"), @("LD","K","O","S"))
+  $adm = 0.0; try { $adm = [double]$ws.Range("H5").Value2 } catch {}
+  for ($g = 0; $g -lt [math]::Min(3, $objs.Count); $g++) {
+    $lado, $cE, $cD, $cA = $mapa[$g]
+    $n = [int]$qtd[$lado]; $r2 = 11 + [math]::Max(1, $n)
+    $ch = $objs[$g].Chart
+    LimpaSeries $ch
+    $x = $ws.Range("$($cE)12:$cE$r2")
+    $b = NovaSerie $ch "Deflexão" $x $ws.Range("$($cD)12:$cD$r2")
+    $b.ChartType = 51                                   # colunas
+    $b.Format.Fill.Visible = -1; $b.Format.Fill.Solid(); $b.Format.Fill.ForeColor.RGB = $AZUL
+    $b.Format.Line.Visible = 0
+    if ($n -gt 0) {
+      $b.HasDataLabels = $true
+      $dl = $b.DataLabels(); $dl.Position = 2; $dl.NumberFormatLinked = $true   # acima da barra, formato da célula
+      $dl.Font.Size = 8; $dl.Font.Bold = $true; $dl.Font.Color = $AZUL
+      # muitas estacas (gráfico estreito): valores em pé e menores, para não encavalar ("84,076,090,0...")
+      if ($n -gt 8) { try { $dl.Font.Size = 7; $dl.Orientation = 90 } catch {} }
+    }
+    if ($n -gt 8) { try { $ca = $ch.Axes(1); $ca.TickLabels.Font.Size = 7; $ca.TickLabels.Orientation = 90; $ca.TickLabelSpacing = 1 } catch {} }
+    $l = NovaSerie $ch "Admissível" $x $ws.Range("$($cA)12:$cA$r2")
+    $l.ChartType = 4                                    # linha
+    $l.MarkerStyle = -4142
+    $l.Format.Line.Visible = -1; $l.Format.Line.ForeColor.RGB = $VERMELHO; $l.Format.Line.Weight = 2
+    $ch.HasLegend = $false
+    try { $ch.ChartGroups(1).GapWidth = 60 } catch {}
+    $maior = $adm
+    for ($r = 12; $r -le $r2; $r++) { $v = $ws.Range("$cD$r").Value2; if ($v -is [double] -and $v -gt $maior) { $maior = $v } }
+  $ay = $ch.Axes(2); $ay.MinimumScale = 0
+    if ($maior -le 270) { $ay.MaximumScale = 300 } else { $ay.MaximumScale = [math]::Ceiling(($maior * 1.15) / 50) * 50 }
+    $ay.MajorUnit = 100
+    $ax = $ch.Axes(1); $ax.TickLabels.Font.Size = 8
+  }
+}
+function GraficoBetume($ws) {
+  # granulometria: dispersão com eixo das peneiras em escala log (como na ficha impressa); só as peneiras da faixa
+  if ($ws.ChartObjects().Count -lt 1) { return }
+  $lin = @()
+  # peneiras da faixa: abertura numérica e máxima > 0 (as linhas fora da faixa dão 0% e derrubavam a linha do limite)
+  for ($r = 15; $r -le 27; $r++) {
+    $k = $ws.Range("K$r").Value2
+    if (($ws.Range("A$r").Value2 -is [double]) -and ($ws.Range("J$r").Value2 -is [double]) -and ($k -is [double]) -and $k -gt 0) { $lin += $r }
+  }
+  if (-not $lin) { return }
+  # peneiras que não são da faixa (mín e máx 0%): deixa a linha em branco na tabela (a abertura some junto)
+  for ($r = 15; $r -le 27; $r++) {
+    if ($lin -notcontains $r -and ($ws.Range("K$r").Value2 -is [double]) -and ([double]$ws.Range("K$r").Value2) -eq 0 -and ([double]$ws.Range("J$r").Value2) -eq 0) {
+      $ws.Range("J$r").MergeArea.ClearContents() | Out-Null; $ws.Range("K$r").MergeArea.ClearContents() | Out-Null
+    }
+  }
+  # peneiras da faixa acima da primeira que reteve material passam 100%: retido acumulado 0
+  foreach ($r in $lin) {
+    if ("$($ws.Range("C$r").Text)" -ne "") { break }
+    $ws.Range("C$r").Value2 = 0
+    $ws.Range("D$r").Formula = "=IF(`$C$r=`"`",`"`",C$r/`$E`$12)"
+    $ws.Range("E$r").Formula = "=IF(`$C$r=`"`",`"`",1-D$r)"
+    $ws.Range("I$r").Formula = "=IF(E$r=`"`",`"`",AVERAGE(H$r,E$r))"
+  }
+  $ws.Calculate()
+  $r1 = ($lin | Measure-Object -Minimum).Minimum; $r2 = ($lin | Measure-Object -Maximum).Maximum
+  $am = @(); foreach ($r in $lin) { if ($ws.Range("I$r").Value2 -is [double]) { $am += $r } }
+  $ch = $ws.ChartObjects(1).Chart
+  LimpaSeries $ch
+  $x = $ws.Range("A$($r1):A$r2")
+  $mn = NovaSerie $ch "Mínima" $x $ws.Range("J$($r1):J$r2")
+  $mx = NovaSerie $ch "Máxima" $x $ws.Range("K$($r1):K$r2")
+  $a = $null
+  if ($am) { $a1 = ($am | Measure-Object -Minimum).Minimum; $a2 = ($am | Measure-Object -Maximum).Maximum
+             $a = NovaSerie $ch "Amostra" $ws.Range("A$($a1):A$a2") $ws.Range("I$($a1):I$a2") }
+  $ch.ChartType = 74                                    # dispersão com linhas e marcadores
+  foreach ($s in @($mn, $mx)) { $s.MarkerStyle = -4142; $s.Format.Line.Visible = -1; $s.Format.Line.ForeColor.RGB = $VERMELHO; $s.Format.Line.Weight = 1.75 }
+  if ($a) {
+    $a.Format.Line.Visible = -1; $a.Format.Line.ForeColor.RGB = $AZUL; $a.Format.Line.Weight = 1.5
+    $a.MarkerStyle = 8; $a.MarkerSize = 4; $a.MarkerForegroundColor = $AZUL; $a.MarkerBackgroundColor = $AZUL
+  }
+  # sem suavizar: no eixo log a curva suavizada passava de 100% e cruzava os limites (não fica "de acordo com o resultado")
+  foreach ($s in @($mn, $mx, $a)) { if ($s) { $s.Smooth = $false } }
+  # rótulos das peneiras: o eixo log do Excel só mostra 0,01/0,1/1/10; uma série invisível em 0% (coluna auxiliar V,
+  # fora da área de impressão) leva como rótulo a abertura de cada peneira da faixa
+  foreach ($r in $lin) { $ws.Range("V$r").Value2 = 0 }
+  $pn = NovaSerie $ch "Peneiras" $x $ws.Range("V$($r1):V$r2")
+  $pn.ChartType = -4169; $pn.MarkerStyle = -4142; $pn.Format.Line.Visible = 0
+  $pn.HasDataLabels = $true
+  $dl = $pn.DataLabels(); $dl.ShowValue = $false; $dl.ShowCategoryName = $true; $dl.Position = 1   # abaixo do ponto
+  $dl.NumberFormat = "General"; $dl.Font.Size = 7
+  $ch.HasLegend = $false
+  $ax = $ch.Axes(1)
+  $ax.ScaleType = -4133; $ax.LogBase = 10; $ax.MinimumScale = 0.01; $ax.MaximumScale = 100
+  $ax.CrossesAt = 0.01                                   # eixo vertical na esquerda (no log ele cruzava no 1)
+  $ax.HasMajorGridlines = $true; $ax.HasMinorGridlines = $true
+  $ax.MinorGridlines.Format.Line.ForeColor.RGB = 14277081   # cinza claro
+  $ax.TickLabelPosition = -4142                          # sem os números 0,01/0,1/...: valem os rótulos das peneiras
+  # título do eixo como caixa de texto no rodapé do gráfico: o título normal do eixo ficava na altura dos rótulos das peneiras
+  $ax.HasTitle = $false
+  try {
+    $pa = $ch.PlotArea; $alt = $ch.ChartArea.Height - $pa.InsideTop - 34
+    if ($alt -gt 50) { $pa.InsideHeight = $alt }
+    $tb = $ch.Shapes.AddTextbox(1, $ch.ChartArea.Width / 2 - 60, $ch.ChartArea.Height - 16, 120, 14)
+    $tb.TextFrame2.TextRange.Text = "PENEIRAS (mm)"; $tb.TextFrame2.TextRange.Font.Size = 8
+    $tb.TextFrame2.TextRange.ParagraphFormat.Alignment = 2; $tb.TextFrame2.MarginTop = 0; $tb.TextFrame2.MarginBottom = 0
+    $tb.Line.Visible = 0; $tb.Fill.Visible = 0
+  } catch { $ax.HasTitle = $true; $ax.AxisTitle.Text = "PENEIRAS (mm)"; $ax.AxisTitle.Font.Size = 8 }
+  $ay = $ch.Axes(2)
+  $ay.MinimumScale = 0; $ay.MaximumScale = 1; $ay.MajorUnit = 0.1
+  $ay.HasMajorGridlines = $true; $ay.TickLabels.NumberFormatLinked = $false; $ay.TickLabels.NumberFormatLocal = "0%"; $ay.TickLabels.Font.Size = 8
+  $ay.HasTitle = $true; $ay.AxisTitle.Text = "MÉDIA PASSANTE (%)"; $ay.AxisTitle.Font.Size = 8; $ay.AxisTitle.Font.Bold = $false
+  # título (A1:K1 mesclado) cortava no Excel: quebra de linha e fonte um pouco menor
+  try { $t = $ws.Range("A1").MergeArea; $t.WrapText = $true; $t.Font.Size = 12; $t.VerticalAlignment = -4108 } catch {}
+  # cabeçalho da linha 7 (massa da mistura, massa do papel, teor de ligante) saía cortado: quebra de linha e linha mais alta
+  try { $ws.Range("A7:K7").WrapText = $true; if ($ws.Rows(7).RowHeight -lt 42) { $ws.Rows(7).RowHeight = 42 } } catch {}
+  # impressão: só a ficha (colunas A:K, até a linha das assinaturas), A4 retrato, 1 página
+  $fim = 0
+  for ($r = 40; $r -le 80; $r++) { if ("$($ws.Range("A$r").Text)$($ws.Range("H$r").Text)" -match 'LABORAT|ENGENHEIRO') { $fim = $r; break } }
+  if ($fim) {
+    $ps = $ws.PageSetup
+    $ps.PrintArea = "`$A`$1:`$K`$$fim"; $ps.Orientation = 1; $ps.Zoom = $false; $ps.FitToPagesWide = 1; $ps.FitToPagesTall = 1; $ps.CenterHorizontally = $true
+  }
+}
+function CoresDeflexao($ws) {
+  # deflexão: a regra "maior que o admissível" pintava de vermelho as linhas vazias no Excel (texto vazio conta como maior).
+  # refaz as duas regras por coluna: verde <= admissível; vermelho entre o admissível e 99999 (ignora texto vazio)
+  # a aba só tem estas regras + duas quebradas (=#REF!, fundo branco) e regras "fantasma" que deixavam o 172,0 do Eixo
+  # branco no PDF (verde na tela): apaga tudo da aba e recria só as da deflexão
+  try { $ws.Cells.FormatConditions.Delete() | Out-Null } catch {}
+  # uma área por vez: o Excel em português recusa pelo COM o endereço com vírgulas (0x800A03EC)
+  foreach ($a in "E12:E27","J12:J27","O12:O27") {
+    $rg = $ws.Range($a)
+    $rg.FormatConditions.Delete() | Out-Null
+    $v = $rg.FormatConditions.Add(1, 8, '=$H$5')               # xlCellValue, xlLessEqual
+    $v.Interior.Color = 183 + 225 * 256 + 205 * 65536            # B7E1CD
+    $r = $rg.FormatConditions.Add(1, 1, '=$H$5', '99999')        # xlCellValue, xlBetween
+    $r.Interior.Color = 244 + 199 * 256 + 195 * 65536            # F4C7C3
+  }
+}
+function ImpressaoViga($ws) {
+  # área de impressão: o quadro da ficha até a linha das assinaturas, A4 paisagem, 1 página
+  $fim = 0
+  for ($r = 28; $r -le 70; $r++) { if ("$($ws.Range("B$r").Text)$($ws.Range("J$r").Text)" -match 'Respons') { $fim = $r + 1; break } }
+  if ($fim) { $ps = $ws.PageSetup; $ps.PrintArea = "`$A`$1:`$O`$$fim"; $ps.Orientation = 2; $ps.Zoom = $false; $ps.FitToPagesWide = 1; $ps.FitToPagesTall = 1; $ps.CenterHorizontally = $true }
+}
 function CopiaAba($wb, $modelo) {
   # devolve a aba nova (achada pelo nome, não pela posição) e garante que ela fica no fim
   $antes = @{}; foreach ($s in $wb.Worksheets) { $antes[$s.Name] = $true }
@@ -372,6 +527,11 @@ try {
             $l++
           }
         }
+        $qtd = @{}; foreach ($lado in "LE","EIXO","LD") { $qtd[$lado] = @($e.leituras.$lado).Count }
+        $ws.Calculate()
+        try { CoresDeflexao $ws } catch { Log "   aviso: não consegui ajustar as cores da deflexão na aba '$nome' ($($_.Exception.Message))" }
+        try { ImpressaoViga $ws } catch { Log "   aviso: não consegui ajustar a impressão da aba '$nome' ($($_.Exception.Message))" }
+        try { GraficosBenkelman $ws $qtd } catch { Log "   aviso: não consegui ajustar os gráficos da aba '$nome' ($($_.Exception.Message))" }
         # ===== resumo: aba Viga. Benk — uma linha por estaca, LE / EIXO / LD lado a lado =====
         if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
         $wr = $wbRes.Worksheets.Item("Viga. Benk")
@@ -606,6 +766,7 @@ try {
             if ("$($ws.Range("A$l").Value2)" -like "OBSERVA*") { $ws.Range("A$l").Value2 = [string]("OBSERVAÇÃO: " + $(if ($e.obs) { $e.obs } else { "" })); break }
           }
           $ws.Calculate()
+          try { GraficoBetume $ws } catch { Log "   aviso: não consegui ajustar o gráfico da aba '$nome' ($($_.Exception.Message))" }
           }
           catch {
             # não deixa aba pela metade (senão ela vira o modelo do próximo lançamento)
