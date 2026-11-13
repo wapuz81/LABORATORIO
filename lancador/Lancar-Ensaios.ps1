@@ -192,7 +192,10 @@ function GraficosBenkelman($ws, $qtd) {
       $b.HasDataLabels = $true
       $dl = $b.DataLabels(); $dl.Position = 2; $dl.NumberFormatLinked = $true   # acima da barra, formato da célula
       $dl.Font.Size = 8; $dl.Font.Bold = $true; $dl.Font.Color = $AZUL
+      # muitas estacas (gráfico estreito): valores em pé e menores, para não encavalar ("84,076,090,0...")
+      if ($n -gt 8) { $dl.Font.Size = 7; $dl.Orientation = 90 }
     }
+    if ($n -gt 8) { try { $ca = $ch.Axes(1); $ca.TickLabels.Font.Size = 7; $ca.TickLabels.Orientation = 90; $ca.TickLabelSpacing = 1 } catch {} }
     $l = NovaSerie $ch "Admissível" $x $ws.Range("$($cA)12:$cA$r2")
     $l.ChartType = 4                                    # linha
     $l.MarkerStyle = -4142
