@@ -249,13 +249,21 @@ function GraficoBetume($ws) {
     $a.MarkerStyle = 8; $a.MarkerSize = 4; $a.MarkerForegroundColor = $AZUL; $a.MarkerBackgroundColor = $AZUL
   }
   foreach ($s in @($mn, $mx, $a)) { if ($s) { $s.Smooth = $true } }
+  # rótulos das peneiras: o eixo log do Excel só mostra 0,01/0,1/1/10; uma série invisível em 0% (coluna auxiliar V,
+  # fora da área de impressão) leva como rótulo a abertura de cada peneira da faixa
+  foreach ($r in $lin) { $ws.Range("V$r").Value2 = 0 }
+  $pn = NovaSerie $ch "Peneiras" $x $ws.Range("V$($r1):V$r2")
+  $pn.ChartType = -4169; $pn.MarkerStyle = -4142; $pn.Format.Line.Visible = 0
+  $pn.HasDataLabels = $true
+  $dl = $pn.DataLabels(); $dl.ShowValue = $false; $dl.ShowCategoryName = $true; $dl.Position = 1   # abaixo do ponto
+  $dl.NumberFormat = "General"; $dl.Font.Size = 7
   $ch.HasLegend = $false
   $ax = $ch.Axes(1)
   $ax.ScaleType = -4133; $ax.LogBase = 10; $ax.MinimumScale = 0.01; $ax.MaximumScale = 100
   $ax.CrossesAt = 0.01                                   # eixo vertical na esquerda (no log ele cruzava no 1)
   $ax.HasMajorGridlines = $true; $ax.HasMinorGridlines = $true
   $ax.MinorGridlines.Format.Line.ForeColor.RGB = 14277081   # cinza claro
-  $ax.TickLabels.Font.Size = 8
+  $ax.TickLabelPosition = -4142                          # sem os números 0,01/0,1/...: valem os rótulos das peneiras
   $ax.HasTitle = $true; $ax.AxisTitle.Text = "PENEIRAS (mm)"; $ax.AxisTitle.Font.Size = 8; $ax.AxisTitle.Font.Bold = $false
   $ay = $ch.Axes(2)
   $ay.MinimumScale = 0; $ay.MaximumScale = 1; $ay.MajorUnit = 0.1
@@ -263,6 +271,8 @@ function GraficoBetume($ws) {
   $ay.HasTitle = $true; $ay.AxisTitle.Text = "MÉDIA PASSANTE (%)"; $ay.AxisTitle.Font.Size = 8; $ay.AxisTitle.Font.Bold = $false
   # título (A1:K1 mesclado) cortava no Excel: quebra de linha e fonte um pouco menor
   try { $t = $ws.Range("A1").MergeArea; $t.WrapText = $true; $t.Font.Size = 12; $t.VerticalAlignment = -4108 } catch {}
+  # cabeçalho da linha 7 (massa da mistura, massa do papel, teor de ligante) saía cortado: quebra de linha e linha mais alta
+  try { $ws.Range("A7:K7").WrapText = $true; if ($ws.Rows(7).RowHeight -lt 30) { $ws.Rows(7).RowHeight = 30 } } catch {}
   # impressão: só a ficha (colunas A:K, até a linha das assinaturas), A4 retrato, 1 página
   $fim = 0
   for ($r = 40; $r -le 80; $r++) { if ("$($ws.Range("A$r").Text)$($ws.Range("H$r").Text)" -match 'LABORAT|ENGENHEIRO') { $fim = $r; break } }
@@ -274,9 +284,10 @@ function GraficoBetume($ws) {
 function CoresDeflexao($ws) {
   # deflexão: a regra "maior que o admissível" pintava de vermelho as linhas vazias no Excel (texto vazio conta como maior).
   # refaz as duas regras por coluna: verde <= admissível; vermelho entre o admissível e 99999 (ignora texto vazio)
-  $ws.Range("E12:E27,J12:J27,O12:O27").FormatConditions.Delete() | Out-Null
+  # uma área por vez: o Excel em português recusa pelo COM o endereço com vírgulas (0x800A03EC)
   foreach ($a in "E12:E27","J12:J27","O12:O27") {
     $rg = $ws.Range($a)
+    $rg.FormatConditions.Delete() | Out-Null
     $v = $rg.FormatConditions.Add(1, 8, '=$H$5')               # xlCellValue, xlLessEqual
     $v.Interior.Color = 183 + 225 * 256 + 205 * 65536            # B7E1CD
     $r = $rg.FormatConditions.Add(1, 1, '=$H$5', '99999')        # xlCellValue, xlBetween
