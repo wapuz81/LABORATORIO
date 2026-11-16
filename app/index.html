@@ -167,6 +167,8 @@ const PADRAO = {
   ],
   cfg:{areiaCone:1765, densAreia:1338, kViga:2, li:500, areaBandeja:0.085, projEAI:1.2, projRR:1.0, tolTaxa:0.2, projB:4.6, projC:5.0, tolBetume:0.3, usinaCBUQ:"USINA MORRO REDONDO", laboratorista:""}
 };
+// critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
+const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
 /* ================= Armazenamento ================= */
 let DB;
@@ -240,8 +242,8 @@ function calcFuro(c,f){
   const ot=num(c.otima);
   const dh=h-ot;
   return {areiaDesl,areiaCav,vol,dUmida,dSeca,gc:ok(gc)&&gc>0?gc:NaN,dh,
-    gcOk: ok(gc)?gc>=100:null,
-    hOk: ok(dh)?(dh>=-2-1e-9&&dh<=1+1e-9):null};
+    gcOk: ok(gc)?gc>=TOL.gcMin:null,
+    hOk: ok(dh)?(dh>=TOL.hMin-1e-9&&dh<=TOL.hMax+1e-9):null};
 }
 // Viga Benkelman — D = (Li - Lf) × K
 function calcLeit(c,l){const li=num(l.li),lf=num(l.lf),k=num(c.k);const d=(li-lf)*k;return ok(d)?Math.round(d*100)/100:NaN;}
@@ -831,7 +833,10 @@ function telaCad(){
   $("#titulo").textContent="Cadastros";
   const c=DB.cad;
   $("#app").innerHTML=`
-    <p class="note">Estes cadastros ficam no aparelho e preenchem os ensaios novos. Os valores iniciais vieram da planilha 2611 - Resumo Ensaios Trincheira.</p>
+    ${(()=>{const P=paramCache(),q=P&&P.quando?new Date(P.quando):null;
+      return `<section class="card"><b>Parâmetros de projeto</b><span class="note">${q?`Vêm da planilha <b>PARAMETROS DE PROJETO</b> (Google). Atualizado no aparelho em ${String(q.getDate()).padStart(2,"0")}/${String(q.getMonth()+1).padStart(2,"0")} às ${String(q.getHours()).padStart(2,"0")}:${String(q.getMinutes()).padStart(2,"0")}. Mudanças feitas aqui são trocadas pelos valores da planilha na próxima atualização: altere na planilha.`:`Ainda não atualizado pela planilha PARAMETROS DE PROJETO (precisa de internet e de um envio para o PC feito antes). Por enquanto valem os valores abaixo.`}</span>
+      <div><button class="btn small" type="button" id="paramAtu">Atualizar da planilha</button></div></section>`;})()}
+    <p class="note">Estes cadastros ficam no aparelho e preenchem os ensaios novos.</p>
     <h2>Ruas e Número N</h2>
     <section class="card"><div class="tblwrap"><table class="lt"><thead><tr><th>Rua</th><th>N</th><th></th></tr></thead><tbody>
       ${c.ruas.map((r,i)=>`<tr><td><input data-rua="${i}" data-k="nome" value="${esc(r.nome)}"></td>
@@ -891,7 +896,8 @@ function telaCad(){
   $("#p_emp").oninput=ev=>{c.empreiteiras=ev.target.value.split(",").map(s=>s.trim()).filter(Boolean);salvar();};
   if($("#restaurar"))$("#restaurar").onclick=()=>{confirmando="cad";render();};
   if($("#resNao"))$("#resNao").onclick=()=>{confirmando=null;render();};
-  if($("#resSim"))$("#resSim").onclick=()=>{DB.cad=JSON.parse(JSON.stringify(PADRAO));salvar();confirmando=null;toast("Cadastros restaurados");render();};
+  if($("#resSim"))$("#resSim").onclick=()=>{DB.cad=JSON.parse(JSON.stringify(PADRAO));aplicarParametros(paramCache());salvar();confirmando=null;toast("Cadastros restaurados");render();};
+  if($("#paramAtu"))$("#paramAtu").onclick=()=>buscarParametros(true);
   setBar(null);
 }
 
@@ -957,6 +963,62 @@ async function buscarLancados(avisar){
   }catch(e){if(avisar)toast("Sem internet ou sem resposta do Google");}
   finally{buscandoLanc=false;}
 }
+/* ===== parâmetros de projeto: planilha Google "PARAMETROS DE PROJETO" (lida pelo Apps Script, ?param=1) ===== */
+const PARAM_KEY="lab-campo-param";
+function paramCache(){try{return JSON.parse(localStorage.getItem(PARAM_KEY)||"null");}catch(e){return null;}}
+function aplicarParametros(P){
+  if(!P||!P.abas)return;
+  const A=P.abas,cad=DB.cad,cfg=cad.cfg;
+  const nz=v=>v==null?"":v, n=v=>typeof v==="number"?v:num(v), tx=v=>String(nz(v)).trim();
+  const chave=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  const lin=nome=>Array.isArray(A[nome])?A[nome]:[];
+  // materiais: por "Nome no app", vale o projeto de data mais recente
+  const por={};
+  lin("MATERIAIS").forEach(r=>{const nm=tx(r["Nome no app"]);if(!nm)return;const d=tx(r["Data do projeto"]);if(!por[nm]||d>=por[nm].d)por[nm]={d,r};});
+  const mats=Object.keys(por).map(nm=>{const r=por[nm].r,old=cad.materiais.find(x=>chave(x.nome)===chave(nm))||{};
+    return {nome:nm,procedencia:tx(r["Procedência"]),otima:nz(r["Umidade ótima (%)"]),densLab:nz(r["Densidade máx. lab (kg/m³)"]),densReal:old.densReal||""};});
+  if(mats.length)cad.materiais=mats;
+  const ruas=lin("RUAS").filter(r=>tx(r.Rua)).map(r=>({nome:tx(r.Rua),N:n(r["Número N"])||""}));
+  if(ruas.length)cad.ruas=ruas;
+  const adm=lin("DEFLEXAO").filter(r=>ok(n(r["Número N"])));
+  if(adm.length){Object.keys(TAB_ADM).forEach(k=>delete TAB_ADM[k]);adm.forEach(r=>{TAB_ADM[n(r["Número N"])]=CAMADAS.map(c=>n(r[c]));});}
+  const DOS={dmax:"Diâm. máx. agregado (mm)",aditivo:"Aditivo",dCimento:"Dosagem cimento (kg)",dAreia:"Dosagem areia (kg)",dPedra0:"Dosagem pedra 0 (kg)",
+    dPedra1:"Dosagem pedra 1 (kg)",dAgua:"Dosagem água (kg)",dAditivo:"Dosagem aditivo (kg)"};
+  const tr=lin("CONCRETO").filter(r=>tx(r["Nome no app"])).map(r=>{const sl=n(r["Slump (mm)"]),tl=n(r["Tolerância slump (mm)"]);
+    const t={nome:tx(r["Nome no app"]),concreteira:tx(r.Central),fck:nz(r["fck (MPa)"]),cimento:tx(r.Cimento),slump:ok(sl)?sl/10:"",tolSlump:ok(tl)?tl/10:""};
+    Object.keys(DOS).forEach(k=>t[k]=tx(r[DOS[k]]));return t;});
+  if(tr.length)cad.tracos=tr;
+  lin("TAXAS").forEach(r=>{const l=tx(r.Ligante).toUpperCase(),v=n(r["Taxa projeto (L/m²)"]),t=n(r["Tolerância (±)"]);
+    if(l==="EAI"&&ok(v))cfg.projEAI=v; if(l==="RR-1C"&&ok(v))cfg.projRR=v; if(l==="EAI"&&ok(t))cfg.tolTaxa=t;});
+  lin("CBUQ").filter(r=>/^s/i.test(tx(r["Usar no app"]))).forEach(r=>{const f=tx(r.Faixa).toUpperCase(),v=n(r["Teor CAP projeto (%)"]),t=n(r["Tolerância teor (±)"]);
+    if(f==="B"&&ok(v))cfg.projB=v; if(f==="C"&&ok(v))cfg.projC=v; if(ok(t))cfg.tolBetume=t;});
+  const CONST={"massa de areia no cone":"areiaCone","densidade da areia":"densAreia","constante da viga (k)":"kViga","leitura inicial da viga":"li","area da bandeja":"areaBandeja","usina do cbuq":"usinaCBUQ"};
+  lin("CONSTANTES").forEach(r=>{const k=CONST[chave(r.Item)];if(!k)return;const v=r.Valor;if(v===""||v==null)return;cfg[k]=k==="usinaCBUQ"?tx(v):n(v);});
+  const fx={B:{},C:{}};let temFx=false;
+  lin("FAIXAS CBUQ").forEach(r=>{const mm=n(r["Abertura (mm)"]);const p=PENEIRAS.find(x=>Math.abs(num(x[2])-mm)<0.011);if(!p)return;
+    ["B","C"].forEach(f=>{const a=n(r["Faixa "+f+" mín. (%)"]),b=n(r["Faixa "+f+" máx. (%)"]);if(ok(a)&&ok(b)){fx[f][p[0]]=[a/100,b/100];temFx=true;}});});
+  if(temFx){FAIXAS.B=fx.B;FAIXAS.C=fx.C;}
+  lin("TOLERANCIAS").forEach(r=>{const it=chave(r.Item),a=n(r["Mínimo"]),b=n(r["Máximo"]);
+    if(it.startsWith("grau de compactacao - granulares")&&ok(a))TOL.gcMin=a;
+    if(it.startsWith("umidade de compactacao")){if(ok(a))TOL.hMin=a;if(ok(b))TOL.hMax=b;}});
+}
+let buscandoParam=false;
+async function buscarParametros(avisar){
+  const c=envioCfg();
+  if(!c.url||!c.chave){if(avisar)toast("Faça um envio para o PC primeiro (a senha é pedida nele)");return;}
+  if(buscandoParam)return;buscandoParam=true;
+  try{
+    const r=await fetch(c.url+(c.url.includes("?")?"&":"?")+"param=1&chave="+encodeURIComponent(c.chave),{redirect:"follow"});
+    const j=await r.json();
+    if(!j||!j.ok||!j.abas){if(avisar)toast(j&&j.erro?"Não consegui atualizar: "+j.erro:"O Google ainda não tem os parâmetros (código antigo)");return;}
+    const P={quando:Date.now(),atualizado:j.atualizado||"",abas:j.abas};
+    localStorage.setItem(PARAM_KEY,JSON.stringify(P));
+    aplicarParametros(P);salvar();
+    if(avisar)toast("Parâmetros de projeto atualizados");
+    if(["cadastros"].includes(tela.nome))render();
+  }catch(e){if(avisar)toast("Sem internet ou sem resposta do Google");}
+  finally{buscandoParam=false;}
+}
 function lancadoOutro(e){
   const r=String(e.registro||"").trim();if(!r)return null;
   return lancTodos().find(x=>x.tipo===e.tipo&&String(x.registro).trim()===r&&x.id!==e.id)||null;
@@ -977,8 +1039,9 @@ function blocoLancados(){
 document.addEventListener("change",ev=>{const t=ev.target;if(!t||!/_registro$/.test(t.id||"")||!tela.arg)return;
   const e=DB.ensaios.find(x=>x.id===tela.arg);if(!e)return;const o=lancadoOutro(e);
   if(o)toast(`Atenção: ${NOME_TIPO[e.tipo]||e.tipo} R${e.registro} já foi lançado${o.quem?" por "+o.quem:""} (${dataBR(o.data)}). O PC não vai aceitar número repetido.`);});
-window.addEventListener("online",()=>buscarLancados(false));
-setTimeout(()=>{if(navigator.onLine!==false)buscarLancados(false);},1500);
+aplicarParametros(paramCache());
+window.addEventListener("online",()=>{buscarLancados(false);buscarParametros(false);});
+setTimeout(()=>{if(navigator.onLine!==false){buscarLancados(false);buscarParametros(false);}},1500);
 function envioCfg(){try{return JSON.parse(localStorage.getItem(ENVIO_KEY)||"{}")||{};}catch(e){return {};}}
 function envioSalvar(o){try{localStorage.setItem(ENVIO_KEY,JSON.stringify(o));}catch(e){}}
 // link de configuração: .../?envio=<url do script>  (abrir uma vez no celular; a senha é pedida no 1º envio)
@@ -1040,7 +1103,7 @@ function telaExport(){
   if($("#exPC"))$("#exPC").onclick=async()=>{
     if(!sel.length){toast("Nenhum ensaio para enviar");return;}
     const bt=$("#exPC");bt.disabled=true;bt.textContent="Enviando...";
-    try{await enviarPC(nome,json);marcar();reenviarTodos=false;toast(pend.length?"Enviado para o PC: "+sel.length+" ensaio(s) novo(s)":"Reenviados "+sel.length+" ensaio(s). O PC ignora os já lançados.");ir("lista");}
+    try{await enviarPC(nome,json);marcar();reenviarTodos=false;toast(pend.length?"Enviado para o PC: "+sel.length+" ensaio(s) novo(s)":"Reenviados "+sel.length+" ensaio(s). O PC ignora os já lançados.");ir("lista");buscarParametros(false);}
     catch(err){bt.disabled=false;bt.textContent="Enviar para o PC";
       toast(navigator.onLine===false?"Sem internet. Tente de novo quando tiver sinal.":"Não foi possível enviar ("+(err&&err.message||"erro")+"). Tente de novo.");}
   };
