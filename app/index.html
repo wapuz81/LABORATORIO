@@ -834,7 +834,7 @@ function telaCad(){
   const c=DB.cad;
   $("#app").innerHTML=`
     ${(()=>{const P=paramCache(),q=P&&P.quando?new Date(P.quando):null;
-      return `<section class="card"><b>Parâmetros de projeto</b><span class="note">${q?`Vêm da planilha <b>PARAMETROS DE PROJETO</b> (Google). Atualizado no aparelho em ${String(q.getDate()).padStart(2,"0")}/${String(q.getMonth()+1).padStart(2,"0")} às ${String(q.getHours()).padStart(2,"0")}:${String(q.getMinutes()).padStart(2,"0")}. Mudanças feitas aqui são trocadas pelos valores da planilha na próxima atualização: altere na planilha.`:`Ainda não atualizado pela planilha PARAMETROS DE PROJETO (precisa de internet e de um envio para o PC feito antes). Por enquanto valem os valores abaixo.`}</span>
+      return `<section class="card"><b>Parâmetros de projeto</b><span class="note">${q?`Vêm da planilha <b>PARAMETROS DE PROJETO</b> (Google). Atualizado no aparelho em ${String(q.getDate()).padStart(2,"0")}/${String(q.getMonth()+1).padStart(2,"0")} às ${String(q.getHours()).padStart(2,"0")}:${String(q.getMinutes()).padStart(2,"0")}. Mudanças feitas aqui são trocadas pelos valores da planilha na próxima atualização: altere na planilha.`:`Ainda não atualizado pela planilha PARAMETROS DE PROJETO (precisa de internet; toque em Atualizar da planilha e digite a senha de envio). Por enquanto valem os valores abaixo.`}</span>
       <div><button class="btn small" type="button" id="paramAtu">Atualizar da planilha</button></div></section>`;})()}
     <p class="note">Estes cadastros ficam no aparelho e preenchem os ensaios novos.</p>
     <h2>Ruas e Número N</h2>
@@ -951,11 +951,12 @@ function lancTodos(){return lancCache().itens||[];}
 let buscandoLanc=false;
 async function buscarLancados(avisar){
   const c=envioCfg();
-  if(!c.url||!c.chave){if(avisar)toast("Faça um envio para o PC primeiro (a senha é pedida nele)");return;}
+  if(!garantirSenha(c,avisar))return;
   if(buscandoLanc)return;buscandoLanc=true;
   try{
     const r=await fetch(c.url+(c.url.includes("?")?"&":"?")+"lista=1&chave="+encodeURIComponent(c.chave),{redirect:"follow"});
     const j=await r.json();
+    if(j&&!j.ok&&/chave|senha/i.test(j.erro||"")){envioSalvar({url:c.url,chave:""});if(avisar)toast("Senha errada; toque de novo para digitar");return;}
     if(!j||!j.ok||!Array.isArray(j.itens)){if(avisar)toast(j&&j.erro?"Não consegui atualizar: "+j.erro:"O PC ainda não tem a lista (código do Google antigo)");return;}
     localStorage.setItem(LANC_KEY,JSON.stringify({quando:Date.now(),itens:j.itens}));
     if(avisar)toast("Lista atualizada: "+j.itens.length+" ensaio(s) lançados");
@@ -1005,11 +1006,12 @@ function aplicarParametros(P){
 let buscandoParam=false;
 async function buscarParametros(avisar){
   const c=envioCfg();
-  if(!c.url||!c.chave){if(avisar)toast("Faça um envio para o PC primeiro (a senha é pedida nele)");return;}
+  if(!garantirSenha(c,avisar))return;
   if(buscandoParam)return;buscandoParam=true;
   try{
     const r=await fetch(c.url+(c.url.includes("?")?"&":"?")+"param=1&chave="+encodeURIComponent(c.chave),{redirect:"follow"});
     const j=await r.json();
+    if(j&&!j.ok&&/chave|senha/i.test(j.erro||"")){envioSalvar({url:c.url,chave:""});if(avisar)toast("Senha errada; toque de novo para digitar");return;}
     if(!j||!j.ok||!j.abas){if(avisar)toast(j&&j.erro?"Não consegui atualizar: "+j.erro:"O Google ainda não tem os parâmetros (código antigo)");return;}
     const P={quando:Date.now(),atualizado:j.atualizado||"",abas:j.abas};
     localStorage.setItem(PARAM_KEY,JSON.stringify(P));
@@ -1044,6 +1046,17 @@ window.addEventListener("online",()=>{buscarLancados(false);buscarParametros(fal
 setTimeout(()=>{if(navigator.onLine!==false){buscarLancados(false);buscarParametros(false);}},1500);
 function envioCfg(){try{return JSON.parse(localStorage.getItem(ENVIO_KEY)||"{}")||{};}catch(e){return {};}}
 function envioSalvar(o){try{localStorage.setItem(ENVIO_KEY,JSON.stringify(o));}catch(e){}}
+// sem senha guardada: pede aqui mesmo (só quando a pessoa tocou no botão), sem precisar fazer um envio antes
+function garantirSenha(c,avisar){
+  if(!c.url){if(avisar)toast("Abra uma vez o link de envio que o Takashi passou (configura o envio para o PC)");return false;}
+  if(!c.chave){
+    if(!avisar)return false;
+    const s=(prompt("Senha de envio (peça ao Takashi). Ela fica guardada neste celular.")||"").trim();
+    if(!s)return false;
+    c.chave=s;envioSalvar(c);
+  }
+  return true;
+}
 // link de configuração: .../?envio=<url do script>  (abrir uma vez no celular; a senha é pedida no 1º envio)
 (function(){try{const q=new URLSearchParams(location.search);const u=q.get("envio");
   if(u&&/^https:\/\/script\.google\.com\//.test(u)){envioSalvar({url:u,chave:q.get("chave")||""});history.replaceState(null,"",location.pathname);
