@@ -171,7 +171,7 @@ const PADRAO = {
     {nome:"Cotragon fck 30 (vigas/lajes)",concreteira:"Cotragon",fck:30,cimento:"CPV-ARI",slump:12,tolSlump:2,dmax:"12",aditivo:"PLASTIFICANTE-RD250",dCimento:"322",dAreia:"339/509",dPedra0:"201",dPedra1:"805",dAgua:"(190L) 119,75",dAditivo:"3.220"},
     {nome:"Ricamix fck 35",concreteira:"Ricamix",fck:35,cimento:"CP II F-40",slump:12,tolSlump:2,dmax:"",aditivo:"",dCimento:"",dAreia:"",dPedra0:"",dPedra1:"",dAgua:"",dAditivo:""}
   ],
-  cfg:{areiaCone:1765, densAreia:1338, kViga:2, li:500, areaBandeja:0.085, projEAI:1.2, projRR:1.0, tolTaxa:0.2, projB:4.6, projC:5.0, tolBetume:0.3, usinaCBUQ:"USINA MORRO REDONDO", laboratorista:""}
+  cfg:{areiaCone:1765, densAreia:1338, kViga:2, li:500, areaBandeja:0.085, projEAI:1.2, projRR:1.0, tolTaxa:0.2, projB:4.6, projC:5.0, tolBetume:0.3, usinaCBUQ:"USINA MORRO REDONDO", cimProj:4, cimMin:3, cimMax:4, areaCim:"", laboratorista:""}
 };
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
@@ -319,6 +319,7 @@ function render(){
   else if(v==="taxa") telaTaxa(tela.arg);
   else if(v==="conc") telaConc(tela.arg);
   else if(v==="betu") telaBetume(tela.arg);
+  else if(v==="cim") telaCim(tela.arg);
   else if(v==="cadastros") telaCad();
   else if(v==="exportar") telaExport();
 }
@@ -349,6 +350,11 @@ function novo(tipo){
   } else if(tipo==="taxa"){
     const em=EMULSOES.includes(ult.material)?ult.material:"EAI";
     e=Object.assign(base,{material:em,camada:ult.camada||"",proj:fmtIn(em==="EAI"?c.projEAI:c.projRR),bandejas:[novaBandeja(c)]});
+  } else if(tipo==="cimento"){
+    const sv=ult.servico||"Reciclagem";
+    e=Object.assign(base,{servico:sv,camada:ult.camada||"Base",material:matCim(sv),procedencia:ult.procedencia||"",tipoCimento:ult.tipoCimento||"",teorProj:fmtIn(c.cimProj),
+      densidade:ult.densidade||"",espessura:ult.espessura||"0,20",bandejas:[novaBandejaCim(c)],
+      lado:ult.lado||"Eixo",estacaCP:"",nf:"",placa:"",hUsina:"",hMoldagem:"",cpsComp:"6",idadesComp:"7/28",cpsTracao:"3",idadeTracao:"28",moldador:ult.moldador||""});
   } else if(tipo==="betume"){
     const fx=ult.faixa||"C";
     e=Object.assign(base,{faixa:fx,camada:CAMADAS_CBUQ.includes(ult.camada)?ult.camada:(fx==="B"?"Binder":"Rolamento"),lado:ult.lado||"Eixo",
@@ -358,10 +364,10 @@ function novo(tipo){
   }
   DB.ensaios.push(e);salvar();ir(TELA[tipo],e.id);
 }
-const TELA={densidade:"dens",benkelman:"benk",taxa:"taxa",concreto:"conc",betume:"betu"};
-const TAG={densidade:"DENS",benkelman:"VIGA",taxa:"TAXA",concreto:"CONC",betume:"BETUME"};
+const TELA={densidade:"dens",benkelman:"benk",taxa:"taxa",concreto:"conc",betume:"betu",cimento:"cim"};
+const TAG={densidade:"DENS",benkelman:"VIGA",taxa:"TAXA",concreto:"CONC",betume:"BETUME",cimento:"CIM"};
 function rotTag(e){return e.tipo==="concreto"?"SÉRIE "+(e.registro||"?"):tagDe(e)+" R"+(e.registro||"?");}
-function tagDe(e){return e.tipo==="taxa"?(e.material==="RR-1C"?"RR1C":"EAI"):e.tipo==="concreto"?"SÉRIE":TAG[e.tipo];}
+function tagDe(e){return e.tipo==="cimento"?(e.servico==="BGTC"?"BGTC":"CIM"):e.tipo==="taxa"?(e.material==="RR-1C"?"RR1C":"EAI"):e.tipo==="concreto"?"SÉRIE":TAG[e.tipo];}
 function novaBandeja(c,u){return {estaca:"",posicao:u?u.posicao:"Eixo",temp:u?u.temp:"",bandeja:"",total:"",area:u?u.area:fmtIn(c.areaBandeja)};}
 function novoFuro(){return {estaca:"",posicao:"Eixo",altura:"",antes:"",depois:"",material:"",retido:"",umidade:"",p1:"",p2:"",tara:""};}
 // umidade pela frigideira: h = (P1 - P2) / (P2 - T) × 100
@@ -381,6 +387,12 @@ function situacao(e){
     return c.slumpOk===false?{cls:"bad",t:"slump fora"}:c.tempoOk===false?{cls:"warn",t:"tempo > 2h30"}:{cls:"ok",t:"slump ok"};
   } else if(e.tipo==="taxa"){
     const cs=(e.bandejas||[]).map(b=>calcBandeja(e,b)).filter(c=>ok(c.taxa));
+    if(!cs.length) return {cls:"neutral",t:"sem leitura"};
+    const ruim=cs.filter(c=>c.ok===false).length;
+    return ruim?{cls:"bad",t:ruim+" bandeja(s) verif."}:{cls:"ok",t:cs.length+" bandeja(s) ok"};
+  } else if(e.tipo==="cimento"){
+    if(e.servico==="BGTC"){const n=(num(e.cpsComp)||0)+(num(e.cpsTracao)||0);return n?{cls:"ok",t:n+" CP(s)"}:{cls:"neutral",t:"sem CPs"};}
+    const cs=(e.bandejas||[]).map(b=>calcBandejaCim(e,b)).filter(c=>ok(c.teor));
     if(!cs.length) return {cls:"neutral",t:"sem leitura"};
     const ruim=cs.filter(c=>c.ok===false).length;
     return ruim?{cls:"bad",t:ruim+" bandeja(s) verif."}:{cls:"ok",t:cs.length+" bandeja(s) ok"};
@@ -410,11 +422,12 @@ function telaLista(){
       <button class="btn primary" type="button" id="nConc" style="grid-column:1/-1">+ Moldagem de concreto<small>série, slump, CPs e horários</small></button>
       <button class="btn primary" type="button" id="nTaxa" style="grid-column:1/-1">+ Imprimação / Pintura de ligação<small>taxa de aplicação (EAI, RR-1C)</small></button>
       <button class="btn primary" type="button" id="nBetu" style="grid-column:1/-1">+ CBUQ: teor de betume<small>extração e granulometria (faixa B ou C)</small></button>
+      <button class="btn primary" type="button" id="nCim" style="grid-column:1/-1">+ Cimento: reciclagem / BGTC<small>taxa de cimento pela bandeja ou moldagem de CPs</small></button>
     </section>
     ${temEx?`<div class="note card" style="gap:8px">Os dois ensaios marcados como EXEMPLO usam valores das fichas R41 (densidade) e R32 (Benkelman) só para mostrar como o app funciona.
       <div><button class="btn small" type="button" id="limparEx">Apagar exemplos</button></div></div>`:""}
     <div class="filter" role="group" aria-label="Filtro">
-      ${[["todos","Todos"],["pend","Não exportados"],["densidade","Densidade"],["benkelman","Benkelman"],["concreto","Concreto"],["taxa","Imprimação/Pintura"],["betume","CBUQ"]].map(([k,t])=>`<button type="button" class="btn small" data-f="${k}" aria-pressed="${filtro===k}" style="${filtro===k?"background:var(--accent-soft);border-color:var(--accent)":""}">${t}</button>`).join("")}
+      ${[["todos","Todos"],["pend","Não exportados"],["densidade","Densidade"],["benkelman","Benkelman"],["concreto","Concreto"],["taxa","Imprimação/Pintura"],["betume","CBUQ"],["cimento","Cimento"]].map(([k,t])=>`<button type="button" class="btn small" data-f="${k}" aria-pressed="${filtro===k}" style="${filtro===k?"background:var(--accent-soft);border-color:var(--accent)":""}">${t}</button>`).join("")}
     </div>
     <div class="list">
       ${ens.length?ens.map(e=>{const s=situacao(e);return `
@@ -433,6 +446,7 @@ function telaLista(){
   $("#nTaxa").onclick=()=>novo("taxa");
   $("#nConc").onclick=()=>novo("concreto");
   $("#nBetu").onclick=()=>novo("betume");
+  $("#nCim").onclick=()=>novo("cimento");
   if($("#limparEx")) $("#limparEx").onclick=()=>{DB.ensaios=DB.ensaios.filter(e=>!e.exemplo);try{localStorage.setItem(CHAVE+"-semexemplo","1")}catch(e){};salvar();render();};
   document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filtro=b.dataset.f;render();});
   document.querySelectorAll(".item").forEach(b=>b.onclick=()=>{const e=DB.ensaios.find(x=>x.id===b.dataset.id);ir(TELA[e.tipo],e.id);});
@@ -452,7 +466,7 @@ function cabecalhoComum(e){
       <label class="f full">Rua<select id="c_rua">${opts(DB.cad.ruas.map(r=>r.nome),e.rua,"Escolha a rua")}</select></label>
       ${segCampo(e,"Segmento")}
       <label class="f">Camada<select id="c_camada">${opts(taxa?CAMADAS_TAXA:CAMADAS,e.camada,"Escolha")}</select></label>
-      <label class="f">${taxa?"Emulsão":"Material"}<select id="c_material">${opts(taxa?EMULSOES:tiposMat(e.camada),e.material,e.camada||taxa?"Escolha":"Escolha a camada")}</select></label>
+      ${e.tipo==="cimento"?`<label class="f">Material<input disabled value="${esc(e.material)}"></label>`:`<label class="f">${taxa?"Emulsão":"Material"}<select id="c_material">${opts(taxa?EMULSOES:tiposMat(e.camada),e.material,e.camada||taxa?"Escolha":"Escolha a camada")}</select></label>`}
       ${precisaProc(e)?`<label class="f">Procedência<select id="c_procedencia">${opts(procsMat(e.material),e.procedencia,e.material?"Escolha":"Escolha o material")}</select></label>`:campo("c_procedencia","Procedência",e.procedencia)}
       <label class="f">Empreiteira<input id="c_empreiteira" list="dl_emp" value="${esc(e.empreiteira)}"><datalist id="dl_emp">${DB.cad.empreiteiras.map(x=>`<option value="${esc(x)}">`).join("")}</datalist></label>
     </div>`;
@@ -471,7 +485,7 @@ function ligarComuns(e,aoMudar){
   ligarSeg(e,aoMudar);
   const map={c_registro:"registro",c_data:"data",c_rua:"rua",c_segmento:"segmento",c_camada:"camada",c_material:"material",c_procedencia:"procedencia",c_empreiteira:"empreiteira"};
   Object.entries(map).forEach(([id,k])=>{const el=document.getElementById(id);if(!el)return;el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{e[k]=el.value;
-    if(k==="camada"&&e.tipo!=="taxa"){const ms=$("#c_material");const lista=tiposMat(e.camada);
+    if(k==="camada"&&e.tipo!=="taxa"&&e.tipo!=="cimento"){const ms=$("#c_material");const lista=tiposMat(e.camada);
       if(e.material&&!lista.includes(e.material)){e.material="";e.procedencia="";const ps=$("#c_procedencia");if(ps&&ps.tagName==="SELECT")ps.innerHTML=opts([],"","Escolha o material");
         if(e.tipo==="densidade")["otima","densLab","densReal"].forEach(x=>{e[x]="";const i=document.getElementById("c_"+x);if(i)i.value="";});}
       if(ms)ms.innerHTML=opts(lista,e.material,"Escolha");}
@@ -805,6 +819,93 @@ function atualizarBandejas(e){
     el.innerHTML=`<div>Material<b>${fmt(c.mat,0)} g</b></div><div>Taxa<b>${fmt(c.taxa,2)} L/m² ${chip}</b></div>`;});
 }
 
+/* ================= Cimento: reciclagem (bandeja) e BGTC (moldagem de CPs) ================= */
+// Ficha "CRT - TAXA DE CIMENTO": H = G − F (cimento, kg); I = H / E (kg/m²); J = I / (densidade × espessura) (teor)
+const SERV_CIM=["Reciclagem","BGTC"];
+function matCim(sv){return sv==="BGTC"?"BGTC":"Reciclagem c/ cimento";}
+function faixaCim(){const c=DB.cad.cfg,a=num(c.cimMin),b=num(c.cimMax);return [ok(a)?a:3,ok(b)?b:4];}
+function novaBandejaCim(c,u){return {estaca:"",posicao:u?u.posicao:"Eixo",area:u?u.area:fmtIn(c.areaCim),tara:"",total:""};}
+function calcBandejaCim(e,b){
+  const cim=num(b.total)-num(b.tara),area=num(b.area),dens=num(e.densidade),esp=num(e.espessura);
+  const taxa=area>0&&ok(cim)?cim/area:NaN,teor=ok(taxa)&&dens>0&&esp>0?taxa/(dens*esp)*100:NaN;
+  const [a,z]=faixaCim();
+  return {cim,taxa,teor,ok:ok(teor)?(teor>=a-1e-9&&teor<=z+1e-9):null};
+}
+function telaCim(id){
+  const e=DB.ensaios.find(x=>x.id===id);if(!e)return ir("lista");
+  e.bandejas=e.bandejas||[novaBandejaCim(DB.cad.cfg)];
+  const c=DB.cad.cfg,bgtc=e.servico==="BGTC";
+  const tit=()=>`${e.servico==="BGTC"?"BGTC: moldagem de CPs":"Taxa de cimento"} · R${e.registro||"?"}`;
+  $("#titulo").textContent=tit();
+  const [fa,fz]=faixaCim();
+  $("#app").innerHTML=`
+    <h2>Serviço</h2>
+    <section class="card"><div class="seg" role="group" aria-label="Serviço">${SERV_CIM.map(s=>`<button type="button" data-sv="${s}" aria-pressed="${e.servico===s}">${s==="BGTC"?"BGTC usinada (CPs)":"Reciclagem (bandeja)"}</button>`).join("")}</div>
+      <p class="note">${bgtc?"BGTC usinada (ES-P 16/18): moldagem dos CPs para compressão e tração diametral. A densidade in situ da BGTC é feita no ensaio de Densidade, escolhendo o material BGTC (GC ≥ 100% do Proctor modificado).":"Reciclagem com cimento (ES-P 33/05): taxa de cimento espalhado, medida pela bandeja."}</p></section>
+    <h2>Identificação</h2>
+    <section class="card">${cabecalhoComum(e)}</section>
+    <h2>Cimento</h2>
+    <section class="card"><div class="grid">
+      ${campo("c_tipoCimento","Tipo de cimento",e.tipoCimento,'placeholder="CP II F-40"')}
+      ${campoNum("c_teorProj","Teor de projeto",e.teorProj,"%")}
+      ${bgtc?"":campoNum("c_densidade","Densidade da camada",e.densidade,"kg/m³")+campoNum("c_espessura","Espessura",e.espessura,"m")}
+    </div>${bgtc?"":`<p class="note">Aceita de ${fmt(fa,1)}% a ${fmt(fz,1)}% de cimento (faixa da ficha CRT; muda em Cadastros).</p>`}</section>
+    ${bgtc?`<h2>Moldagem dos CPs</h2>
+    <section class="card"><div class="grid">
+      ${campo("c_estacaCP","Estaca da coleta",e.estacaCP,'placeholder="602+10"')}
+      <div class="full"><div class="seg" role="group" aria-label="Lado">${["LE","Eixo","LD"].map(p=>`<button type="button" data-lado="${p}" aria-pressed="${e.lado===p}">${p}</button>`).join("")}</div></div>
+      ${campo("c_nf","Nota fiscal",e.nf,'inputmode="numeric"')}
+      ${campo("c_placa","Placa do caminhão",e.placa)}
+      <label class="f">Saída da usina<input id="c_hUsina" type="time" value="${esc(e.hUsina)}"></label>
+      <label class="f">Moldagem<input id="c_hMoldagem" type="time" value="${esc(e.hMoldagem)}"></label>
+      ${campoNum("c_cpsComp","CPs de compressão",e.cpsComp,"")}
+      ${campo("c_idadesComp","Idades compressão (dias)",e.idadesComp)}
+      ${campoNum("c_cpsTracao","CPs de tração diametral",e.cpsTracao,"")}
+      ${campo("c_idadeTracao","Idade tração (dias)",e.idadeTracao)}
+      ${campo("c_moldador","Moldador",e.moldador,"full")}
+    </div><div class="calc" id="cimTempo"></div></section>`
+    :`<h2>Bandejas</h2>
+    <div class="list" id="bandejas"></div>
+    <div><button class="btn primary" type="button" id="addBand">+ Adicionar bandeja</button></div>`}
+    ${rodapeEnsaio(e)}`;
+  document.querySelectorAll("[data-sv]").forEach(b=>b.onclick=()=>{if(e.servico===b.dataset.sv)return;e.servico=b.dataset.sv;e.material=matCim(e.servico);tocou(e);salvar();render();});
+  ligarComuns(e,()=>{$("#titulo").textContent=tit();});
+  const campos=bgtc?["tipoCimento","teorProj","estacaCP","nf","placa","hUsina","hMoldagem","cpsComp","idadesComp","cpsTracao","idadeTracao","moldador"]:["tipoCimento","teorProj","densidade","espessura"];
+  campos.forEach(k=>{const el=$("#c_"+k);if(el)el.oninput=()=>{e[k]=el.value;if(k==="teorProj")c.cimProj=num(el.value);tocou(e);salvar();if(bgtc)tempoCim(e);else atualizarBandejasCim(e);};});
+  if(bgtc){document.querySelectorAll("[data-lado]").forEach(x=>x.onclick=()=>{e.lado=x.dataset.lado;tocou(e);salvar();document.querySelectorAll("[data-lado]").forEach(y=>y.setAttribute("aria-pressed",y===x));});tempoCim(e);}
+  else{$("#addBand").onclick=()=>{const u=e.bandejas[e.bandejas.length-1];e.bandejas.push(novaBandejaCim(c,u));tocou(e);salvar();desenharBandejasCim(e);
+      const cards=document.querySelectorAll(".band");cards[cards.length-1].scrollIntoView({behavior:"smooth",block:"start"});};
+    desenharBandejasCim(e);}
+  ligarRodape(e);
+  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
+}
+function tempoCim(e){const el=$("#cimTempo");if(!el)return;let t=minutos(e.hMoldagem)-minutos(e.hUsina);if(ok(t)&&t<0)t+=1440;
+  el.innerHTML=`<div>Usina → moldagem<b>${ok(t)?Math.floor(t/60)+"h"+String(t%60).padStart(2,"0"):"–"}</b></div><div>Total de CPs<b>${(num(e.cpsComp)||0)+(num(e.cpsTracao)||0)}</b></div>`;}
+function desenharBandejasCim(e){
+  $("#bandejas").innerHTML=e.bandejas.map((b,i)=>`
+    <section class="card band" data-i="${i}">
+      <div class="furo-h"><b>Amostra ${i+1}</b>${e.bandejas.length>1?`<button class="btn small danger" type="button" data-rm="${i}">Remover</button>`:""}</div>
+      <div class="grid">
+        <label class="f">Estaca<input data-k="estaca" value="${esc(b.estaca)}" placeholder="602+10"></label>
+        <label class="f">Área da bandeja <span class="u">(m²)</span><input data-k="area" class="num" inputmode="decimal" value="${esc(b.area)}"></label>
+        <div class="full"><div class="seg" role="group" aria-label="Posição">${["LE","Eixo","LD"].map(p=>`<button type="button" data-pos="${p}" aria-pressed="${b.posicao===p}">${p}</button>`).join("")}</div></div>
+        <label class="f">Tara <span class="u">(kg)</span><input data-k="tara" class="num" inputmode="decimal" value="${esc(b.tara)}"></label>
+        <label class="f">Tara + cimento <span class="u">(kg)</span><input data-k="total" class="num" inputmode="decimal" value="${esc(b.total)}"></label>
+      </div>
+      <div class="calc" data-tx="${i}"></div>
+    </section>`).join("");
+  document.querySelectorAll(".band").forEach(card=>{const i=+card.dataset.i,b=e.bandejas[i];
+    card.querySelectorAll("input[data-k]").forEach(inp=>inp.oninput=()=>{b[inp.dataset.k]=inp.value;if(inp.dataset.k==="area")DB.cad.cfg.areaCim=inp.value;tocou(e);salvar();atualizarBandejasCim(e);});
+    card.querySelectorAll("[data-pos]").forEach(x=>x.onclick=()=>{b.posicao=x.dataset.pos;tocou(e);salvar();card.querySelectorAll("[data-pos]").forEach(y=>y.setAttribute("aria-pressed",y===x));});
+    const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.bandejas.splice(i,1);tocou(e);salvar();desenharBandejasCim(e);};});
+  atualizarBandejasCim(e);
+}
+function atualizarBandejasCim(e){
+  e.bandejas.forEach((b,i)=>{const el=document.querySelector(`[data-tx="${i}"]`);if(!el)return;const c=calcBandejaCim(e,b);
+    const chip=c.ok==null?'<span class="chip neutral">–</span>':`<span class="chip ${c.ok?"ok":"bad"}">${c.ok?"APROVADO":"REPROVADO"}</span>`;
+    el.innerHTML=`<div>Cimento<b>${fmt(c.cim,3)} kg</b></div><div>Taxa<b>${fmt(c.taxa,2)} kg/m²</b></div><div>Teor<b>${fmt(c.teor,2)}% ${chip}</b></div>`;});
+}
+
 /* ================= CBUQ: teor de betume + granulometria ================= */
 // Ficha "TEOR BETUME": ligante = mistura − agregado; teor = ligante / mistura; passante = 1 − retido acumulado / peso da amostra
 function calcBetume(e){
@@ -928,6 +1029,9 @@ function telaCad(){
       ${campoNum("p_projC","Teor de betume projeto Faixa C",fmtIn(c.cfg.projC),"%")}
       ${campoNum("p_tolBetume","Tolerância do teor",fmtIn(c.cfg.tolBetume),"± %")}
       ${campo("p_usinaCBUQ","Usina do CBUQ",c.cfg.usinaCBUQ)}
+      ${campoNum("p_cimProj","Teor de cimento de projeto",fmtIn(c.cfg.cimProj),"%")}
+      ${campoNum("p_cimMin","Teor de cimento mínimo (bandeja)",fmtIn(c.cfg.cimMin),"%")}
+      ${campoNum("p_cimMax","Teor de cimento máximo (bandeja)",fmtIn(c.cfg.cimMax),"%")}
       <label class="f full">Empreiteiras <span class="u">(separe por vírgula)</span><input id="p_emp" value="${esc(c.empreiteiras.join(", "))}"></label>
     </div></section>
     <h2>Restaurar</h2>
@@ -952,7 +1056,7 @@ function telaCad(){
   document.querySelectorAll("[data-rmtr]").forEach(b=>b.onclick=()=>{c.tracos.splice(+b.dataset.rmtr,1);salvar();render();});
   $("#addTr").onclick=()=>{c.tracos.push(Object.assign({nome:"",concreteira:"",fck:"",cimento:"",slump:"",tolSlump:""},Object.fromEntries(DOSAGEM.map(([k])=>[k,""]))));salvar();render();};
   $("#addMat").onclick=()=>{c.materiais.push({nome:"",procedencia:"",otima:"",densLab:"",densReal:""});salvar();render();};
-  [["p_areiaCone","areiaCone"],["p_densAreia","densAreia"],["p_kViga","kViga"],["p_li","li"],["p_areaBandeja","areaBandeja"],["p_tolTaxa","tolTaxa"],["p_projEAI","projEAI"],["p_projRR","projRR"],["p_projB","projB"],["p_projC","projC"],["p_tolBetume","tolBetume"],["p_usinaCBUQ","usinaCBUQ"]].forEach(([id,k])=>$("#"+id).oninput=ev=>{c.cfg[k]=ev.target.value;salvar();});
+  [["p_areiaCone","areiaCone"],["p_densAreia","densAreia"],["p_kViga","kViga"],["p_li","li"],["p_areaBandeja","areaBandeja"],["p_tolTaxa","tolTaxa"],["p_projEAI","projEAI"],["p_projRR","projRR"],["p_projB","projB"],["p_projC","projC"],["p_tolBetume","tolBetume"],["p_usinaCBUQ","usinaCBUQ"],["p_cimProj","cimProj"],["p_cimMin","cimMin"],["p_cimMax","cimMax"]].forEach(([id,k])=>$("#"+id).oninput=ev=>{c.cfg[k]=ev.target.value;salvar();});
   $("#p_emp").oninput=ev=>{c.empreiteiras=ev.target.value.split(",").map(s=>s.trim()).filter(Boolean);salvar();};
   if($("#restaurar"))$("#restaurar").onclick=()=>{confirmando="cad";render();};
   if($("#resNao"))$("#resNao").onclick=()=>{confirmando=null;render();};
@@ -985,6 +1089,14 @@ function pacote(lista){
         Object.assign(base,{emulsao:e.material,proj:n2(e.proj),tolerancia:n2(DB.cad.cfg.tolTaxa),
           bandejas:e.bandejas.filter(b=>ok(num(b.total))).map(b=>{const c=calcBandeja(e,b);return {estaca:b.estaca,posicao:b.posicao,temp:n2(b.temp),
             bandeja:n2(b.bandeja),total:n2(b.total),area:n2(b.area),calc:{material:ok(c.mat)?c.mat:null,taxa:ok(c.taxa)?+c.taxa.toFixed(3):null,ok:c.ok}};})});
+      } else if(e.tipo==="cimento"){
+        const [fa,fz]=faixaCim();
+        Object.assign(base,{servico:e.servico,tipoCimento:e.tipoCimento,teorProj:n2(e.teorProj)});
+        if(e.servico==="BGTC") Object.assign(base,{estaca:e.estacaCP,lado:e.lado,nf:e.nf,placa:e.placa,hUsina:e.hUsina,hMoldagem:e.hMoldagem,
+          cpsComp:n2(e.cpsComp),idadesComp:e.idadesComp,cpsTracao:n2(e.cpsTracao),idadeTracao:e.idadeTracao,moldador:e.moldador});
+        else Object.assign(base,{densidade:n2(e.densidade),espessura:n2(e.espessura),teorMin:fa,teorMax:fz,
+          bandejas:e.bandejas.filter(b=>ok(num(b.total))).map(b=>{const c=calcBandejaCim(e,b);return {estaca:b.estaca,posicao:b.posicao,area:n2(b.area),tara:n2(b.tara),total:n2(b.total),
+            calc:{cimento:ok(c.cim)?+c.cim.toFixed(3):null,taxa:ok(c.taxa)?+c.taxa.toFixed(3):null,teor:ok(c.teor)?+c.teor.toFixed(2):null,ok:c.ok}};})});
       } else if(e.tipo==="betume"){
         const c=calcBetume(e);
         Object.assign(base,{faixa:e.faixa,lado:e.lado,proj:n2(e.proj),tolerancia:n2(DB.cad.cfg.tolBetume),mistura:n2(e.mistura),papel:n2(e.papel),papelAgreg:n2(e.papelAgreg),
@@ -1005,7 +1117,7 @@ function aammdd(){const d=new Date();return String(d.getFullYear()).slice(2)+Str
 const ENVIO_KEY="lab-campo-envio";
 /* ===== ensaios já lançados no PC por todos os celulares (lista lancados.csv lida pelo Apps Script) ===== */
 const LANC_KEY="lab-campo-lancados";
-const NOME_TIPO={densidade:"Densidade",benkelman:"Benkelman",concreto:"Concreto",taxa:"Imprim./Pintura",betume:"CBUQ"};
+const NOME_TIPO={densidade:"Densidade",benkelman:"Benkelman",concreto:"Concreto",taxa:"Imprim./Pintura",betume:"CBUQ",cimento:"Cimento"};
 function lancCache(){try{return JSON.parse(localStorage.getItem(LANC_KEY)||"null")||{quando:0,itens:[]};}catch(e){return {quando:0,itens:[]};}}
 function lancTodos(){return lancCache().itens||[];}
 let buscandoLanc=false;
@@ -1063,7 +1175,8 @@ function aplicarParametros(P){
   if(temFx){FAIXAS.B=fx.B;FAIXAS.C=fx.C;}
   lin("TOLERANCIAS").forEach(r=>{const it=chave(r.Item),a=n(r["Mínimo"]),b=n(r["Máximo"]);
     if(it.startsWith("grau de compactacao - granulares")&&ok(a))TOL.gcMin=a;
-    if(it.startsWith("umidade de compactacao")){if(ok(a))TOL.hMin=a;if(ok(b))TOL.hMax=b;}});
+    if(it.startsWith("umidade de compactacao")){if(ok(a))TOL.hMin=a;if(ok(b))TOL.hMax=b;}
+    if(it.startsWith("teor de cimento")){if(ok(a))cfg.cimMin=a;if(ok(b))cfg.cimMax=b;}});
 }
 let buscandoParam=false;
 async function buscarParametros(avisar){
@@ -1139,13 +1252,17 @@ async function enviarPC(nome,json){
 let reenviarTodos=false;
 function telaExport(){
   $("#titulo").textContent="Exportar para o PC";
-  const reais=DB.ensaios.filter(e=>!e.exemplo);
+  // o lançador do PC ainda não lança o ensaio de cimento: ele fica guardado no celular
+  const retidos=DB.ensaios.filter(e=>!e.exemplo&&e.tipo==="cimento");
+  const avisoCim=retidos.length?`<section class="card"><b>${retidos.length} ensaio(s) de cimento guardado(s) no celular</b><span class="note">O PC ainda não lança o ensaio de cimento. Eles ficam guardados aqui e vão no primeiro envio depois que o lançador for atualizado.</span></section>`:"";
+  const reais=DB.ensaios.filter(e=>!e.exemplo&&e.tipo!=="cimento");
   const pend=reais.filter(e=>e.status!=="exportado");
   if(!pend.length&&!reenviarTodos){
     $("#app").innerHTML=`<section class="card"><b>Nenhum ensaio novo para enviar</b>
-      <span class="note">${reais.length?`Os ${reais.length} ensaio(s) deste celular já foram enviados. Quando você preencher um ensaio novo, ele aparece aqui.`:"Ainda não há ensaios neste celular."}</span>
+      <span class="note">${reais.length?`Os ${reais.length} ensaio(s) deste celular já foram enviados. Quando você preencher um ensaio novo, ele aparece aqui.`:(retidos.length?"Os ensaios de cimento ficam no celular por enquanto (veja abaixo).":"Ainda não há ensaios neste celular.")}</span>
       ${reais.length?`<span class="note">Só use o botão abaixo se o PC não recebeu um envio. Ensaios que o PC já lançou são ignorados por ele.</span>
       <div class="row"><button class="btn grow" type="button" id="exTodos">Reenviar todos (${reais.length})</button></div>`:""}</section>`;
+    if(avisoCim)$("#app").insertAdjacentHTML("beforeend",avisoCim);
     if($("#exTodos"))$("#exTodos").onclick=()=>{reenviarTodos=true;render();};
     setBar(null);return;
   }
@@ -1180,7 +1297,7 @@ function telaExport(){
       </div>
       <textarea class="exp" id="exTxt" readonly aria-label="Conteúdo do arquivo">${esc(json)}</textarea>
       <button class="btn" type="button" id="exMarcar">Marcar como exportados</button>
-    </section>`;
+    </section>${avisoCim}`;
   const marcar=()=>{sel.forEach(e=>e.status="exportado");salvar();};
   $("#exBaixar").onclick=()=>{try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));a.download=nome;document.body.appendChild(a);a.click();a.remove();marcar();toast("Arquivo salvo em Downloads");}catch(err){toast("Não foi possível salvar. Use Copiar texto.");}};
   if($("#exPC"))$("#exPC").onclick=async()=>{
