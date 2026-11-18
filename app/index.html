@@ -138,7 +138,8 @@ const LOCAIS = ["Trincheira Norte","Trincheira Sul","Estação São Pedro"];
 const DOSAGEM = [["dmax","Diâm. máx. agregado (mm)"],["aditivo","Tipo de aditivo"],["dCimento","Cimento (kg)"],["dAreia","Areia (kg)"],
   ["dPedra0","Pedra 0 (kg)"],["dPedra1","Pedra 1 (kg)"],["dAgua","Água (kg)"],["dAditivo","Aditivo (kg)"]];
 const TRACOS_V = 2; // aumentar quando os traços padrão ganharem dados novos
-const MATS_V = 2; // 2: material = só o tipo; a procedência escolhe o projeto
+const MATS_V = 3;
+const ANT_MAT={"Moledo Extrabel":["Moledo","Extrabel Minérios"],"BGS Cotragon":["BGS","Pedreira Cotragon"],"Brita 4A":["Bica Corrida","Mineração Barigui"]}; // 2: material = só o tipo; a procedência escolhe o projeto
 const RUAS_V = 4; // aumentar quando a lista de ruas padrão ganhar ruas
 const PADRAO = {
   ruas:[
@@ -150,15 +151,15 @@ const PADRAO = {
     {nome:"Othoniel Taborda Reinhardt",N:5e6},{nome:"Santa Mônica",N:5e6},{nome:"Linha Verde",N:5e7}
   ],
   materiais:[
-    {nome:"Moledo",procedencia:"Pedreira Costa",otima:6.4,densLab:1951,densReal:""},
-    {nome:"Moledo",procedencia:"Extrabel Minérios",otima:5.2,densLab:2118,densReal:""},
-    {nome:"Bica Corrida",procedencia:"Mineração Barigui",otima:6.2,densLab:2155,densReal:""},
-    {nome:"Bica Corrida",procedencia:"Pedreira Costa",otima:6.1,densLab:2167,densReal:""},
-    {nome:"BGS",procedencia:"Min. Cantareira",otima:5.9,densLab:2200,densReal:""},
-    {nome:"BGS",procedencia:"Pedreira Cotragon",otima:4.9,densLab:2187,densReal:""},
-    {nome:"BGTC",procedencia:"",otima:"",densLab:"",densReal:""},
-    {nome:"CAUQ B",procedencia:"Min. Morro Redondo",otima:"",densLab:"",densReal:""},
-    {nome:"CAUQ C",procedencia:"Min. Morro Redondo",otima:"",densLab:"",densReal:""}
+    {nome:"Moledo",procedencia:"Pedreira Costa",otima:6.4,densLab:1951,densReal:"",camadas:["Subleito","Reforço"]},
+    {nome:"Moledo",procedencia:"Extrabel Minérios",otima:5.2,densLab:2118,densReal:"",camadas:["Subleito","Reforço"]},
+    {nome:"Bica Corrida",procedencia:"Mineração Barigui",otima:6.2,densLab:2155,densReal:"",camadas:["Sub-base"]},
+    {nome:"Bica Corrida",procedencia:"Pedreira Costa",otima:6.1,densLab:2167,densReal:"",camadas:["Sub-base"]},
+    {nome:"BGS",procedencia:"Min. Cantareira",otima:5.9,densLab:2200,densReal:"",camadas:["Sub-base","Base"]},
+    {nome:"BGS",procedencia:"Pedreira Cotragon",otima:4.9,densLab:2187,densReal:"",camadas:["Sub-base","Base"]},
+    {nome:"BGTC",procedencia:"",otima:"",densLab:"",densReal:"",camadas:["Sub-base","Base"]},
+    {nome:"CAUQ B",procedencia:"Min. Morro Redondo",otima:"",densLab:"",densReal:"",camadas:["Revestimento"]},
+    {nome:"CAUQ C",procedencia:"Min. Morro Redondo",otima:"",densLab:"",densReal:"",camadas:["Revestimento"]}
   ],
   empreiteiras:["VDL"],
   tracos:[
@@ -191,7 +192,7 @@ function carregar(){
   }
   // materiais por tipo + procedência (antes: um nome por fornecedor, ex. "BGS Cotragon")
   if((d.cad.cfg.matsV||1)<MATS_V){
-    const ANT={"Moledo Extrabel":["Moledo","Extrabel Minérios"],"BGS Cotragon":["BGS","Pedreira Cotragon"],"Brita 4A":["Bica Corrida","Mineração Barigui"]};
+    const ANT=ANT_MAT;
     const dr={};(d.cad.materiais||[]).forEach(m=>{if(m.densReal)dr[m.nome]=m.densReal;});
     d.cad.materiais=JSON.parse(JSON.stringify(PADRAO.materiais));
     d.ensaios.forEach(e=>{const a=ANT[e.material];if(a){e.material=a[0];e.procedencia=a[1];}});
@@ -235,7 +236,8 @@ function proxEstaca(lista){
 function ruaN(nome){const r=DB.cad.ruas.find(x=>x.nome===nome);return r&&r.N?r.N:NaN;}
 function admissivel(N,camada){const lin=TAB_ADM[N];const i=CAMADAS.indexOf(camada);return lin&&i>=0?lin[i]:NaN;}
 function material(nome,proc){const l=DB.cad.materiais.filter(m=>m.nome===nome);return proc==null?l[0]:l.find(m=>m.procedencia===proc);}
-function tiposMat(){return [...new Set(DB.cad.materiais.map(m=>m.nome).filter(Boolean))];}
+const servePara=(m,cam)=>!cam||!m.camadas||!m.camadas.length||m.camadas.includes(cam);
+function tiposMat(cam){return [...new Set(DB.cad.materiais.filter(m=>servePara(m,cam)).map(m=>m.nome).filter(Boolean))];}
 function procsMat(nome){return [...new Set(DB.cad.materiais.filter(m=>m.nome===nome).map(m=>m.procedencia||"(sem procedência)"))];}
 const precisaProc=e=>e.tipo==="densidade"||e.tipo==="benkelman";
 function nomeN(N){return ok(N)?(N/Math.pow(10,Math.floor(Math.log10(N)))).toLocaleString("pt-BR")+"×10"+sup(Math.floor(Math.log10(N))):"–";}
@@ -447,7 +449,7 @@ function cabecalhoComum(e){
       <label class="f full">Rua<select id="c_rua">${opts(DB.cad.ruas.map(r=>r.nome),e.rua,"Escolha a rua")}</select></label>
       ${campo("c_segmento","Segmento (estacas)",e.segmento,'placeholder="804+00 a 808+10" full')}
       <label class="f">Camada<select id="c_camada">${opts(taxa?CAMADAS_TAXA:CAMADAS,e.camada,"Escolha")}</select></label>
-      <label class="f">${taxa?"Emulsão":"Material"}<select id="c_material">${opts(taxa?EMULSOES:tiposMat(),e.material,"Escolha")}</select></label>
+      <label class="f">${taxa?"Emulsão":"Material"}<select id="c_material">${opts(taxa?EMULSOES:tiposMat(e.camada),e.material,e.camada||taxa?"Escolha":"Escolha a camada")}</select></label>
       ${precisaProc(e)?`<label class="f">Procedência<select id="c_procedencia">${opts(procsMat(e.material),e.procedencia,e.material?"Escolha":"Escolha o material")}</select></label>`:campo("c_procedencia","Procedência",e.procedencia)}
       <label class="f">Empreiteira<input id="c_empreiteira" list="dl_emp" value="${esc(e.empreiteira)}"><datalist id="dl_emp">${DB.cad.empreiteiras.map(x=>`<option value="${esc(x)}">`).join("")}</datalist></label>
     </div>`;
@@ -455,6 +457,10 @@ function cabecalhoComum(e){
 function ligarComuns(e,aoMudar){
   const map={c_registro:"registro",c_data:"data",c_rua:"rua",c_segmento:"segmento",c_camada:"camada",c_material:"material",c_procedencia:"procedencia",c_empreiteira:"empreiteira"};
   Object.entries(map).forEach(([id,k])=>{const el=document.getElementById(id);if(!el)return;el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{e[k]=el.value;
+    if(k==="camada"&&e.tipo!=="taxa"){const ms=$("#c_material");const lista=tiposMat(e.camada);
+      if(e.material&&!lista.includes(e.material)){e.material="";e.procedencia="";const ps=$("#c_procedencia");if(ps&&ps.tagName==="SELECT")ps.innerHTML=opts([],"","Escolha o material");
+        if(e.tipo==="densidade")["otima","densLab","densReal"].forEach(x=>{e[x]="";const i=document.getElementById("c_"+x);if(i)i.value="";});}
+      if(ms)ms.innerHTML=opts(lista,e.material,"Escolha");}
     if(k==="material"&&precisaProc(e)){e.procedencia="";const ps=$("#c_procedencia");if(ps)ps.innerHTML=opts(procsMat(e.material),"",e.material?"Escolha":"Escolha o material");
       if(e.tipo==="densidade")["otima","densLab","densReal"].forEach(x=>{e[x]="";const i=document.getElementById("c_"+x);if(i)i.value="";});}
     if(k==="procedencia"&&e.tipo==="densidade"){const m=material(e.material,e.procedencia);
@@ -1015,9 +1021,11 @@ function aplicarParametros(P){
   const lin=nome=>Array.isArray(A[nome])?A[nome]:[];
   // materiais: por "Nome no app", vale o projeto de data mais recente
   const por={};
-  lin("MATERIAIS").forEach(r=>{const nm=tx(r["Nome no app"]);if(!nm)return;const pr=tx(r["Procedência"]),k=nm+"|"+pr,d=tx(r["Data do projeto"]);if(!por[k]||d>=por[k].d)por[k]={d,r,nm,pr};});
+  lin("MATERIAIS").forEach(r=>{let nm=tx(r["Nome no app"]);if(!nm)return;let pr=tx(r["Procedência"]);if(ANT_MAT[nm]){pr=pr||ANT_MAT[nm][1];nm=ANT_MAT[nm][0];}const pr0=pr,k=nm+"|"+pr,d=tx(r["Data do projeto"]);if(!por[k]||d>=por[k].d)por[k]={d,r,nm,pr};});
   const mats=Object.values(por).map(({r,nm,pr})=>{const old=cad.materiais.find(x=>chave(x.nome)===chave(nm)&&chave(x.procedencia)===chave(pr))||{};
-    return {nome:nm,procedencia:pr,otima:nz(r["Umidade ótima (%)"]),densLab:nz(r["Densidade máx. lab (kg/m³)"]),densReal:old.densReal||""};});
+    const cs=tx(r["Camadas (app)"]).split(/[;,]/).map(x=>x.trim()).filter(Boolean).map(x=>CAMADAS.find(c=>chave(c)===chave(x))||x);
+    const pad=PADRAO.materiais.find(x=>x.nome===nm)||{};
+    return {nome:nm,procedencia:pr,otima:nz(r["Umidade ótima (%)"]),densLab:nz(r["Densidade máx. lab (kg/m³)"]),densReal:old.densReal||"",camadas:cs.length?cs:(pad.camadas||[])};});
   if(mats.length)cad.materiais=mats;
   const ruas=lin("RUAS").filter(r=>tx(r.Rua)).map(r=>({nome:tx(r.Rua),N:n(r["Número N"])||""}));
   if(ruas.length)cad.ruas=ruas;
