@@ -53,6 +53,14 @@ foreach ($j in $jsons) {
     if ($k) { $regUsado[$k] = "usado em $($j.Name), nesta mesma rodada" }
     $naFila[$e.id] = $true
     $e | Add-Member -NotePropertyName arquivo -NotePropertyValue $j.Name -Force
+    # nomes antigos do app (um nome por fornecedor) -> material = tipo + procedência
+    $antigo = @{ "Moledo Extrabel" = @("Moledo", "Extrabel Minérios"); "BGS Cotragon" = @("BGS", "Pedreira Cotragon"); "Brita 4A" = @("Bica Corrida", "Mineração Barigui") }
+    if ($e.material -and $antigo.ContainsKey("$($e.material)")) {
+      $par = $antigo["$($e.material)"]
+      $e | Add-Member -NotePropertyName material -NotePropertyValue $par[0] -Force
+      $e | Add-Member -NotePropertyName procedencia -NotePropertyValue $par[1] -Force
+    }
+    if ("$($e.procedencia)" -like "(*") { $e | Add-Member -NotePropertyName procedencia -NotePropertyValue "" -Force }
     $ensaios += $e
   }
 }
@@ -487,7 +495,8 @@ try {
           $i++
           $gc = $ws.Range("S$(9 + $i)").Value2
           $r = NovaLinha $wr 4 10
-          LimpaDados $wr $r @("A","B","C","D","E","F","G","H","J","K","N","Q","R","T","U")
+          # colunas do Resumo (Mat. Granular): E material, F procedência, G camada, H lado, I GC, K umidade, L ótima do projeto
+          LimpaDados $wr $r @("A","B","C","D","E","F","G","H","I","K","L","O","R","S","U","V")
           FormulasDe $wr 10 $r
           $reg = if ("$($e.registro)" -match '\.') { "$($e.registro)" } else { "$($e.registro).$i" }
           Escreve $wr "A$r" (NumOuTexto $reg)
@@ -495,13 +504,14 @@ try {
           Escreve $wr "C$r" (Rua $e)
           Escreve $wr "D$r" ($f.estaca)
           Escreve $wr "E$r" (MaterialResumo $e.material)
-          Escreve $wr "F$r" ($e.camada)
-          Escreve $wr "G$r" (@{ "LE" = "Esquerdo"; "Eixo" = "Eixo"; "LD" = "Direito" }[$f.posicao])
-          if ($gc -is [double]) { $wr.Range("H$r").Value2 = [math]::Round($gc / 100, 4) }
-          if ($null -ne $f.umidade) { $wr.Range("J$r").Value2 = [math]::Round([double]$f.umidade / 100, 4) }
-          # ótima: vale sempre a da Proj. Exec. (fórmula da coluna K); o valor do campo só entra se o material não tiver projeto
+          Escreve $wr "F$r" ($e.procedencia)
+          Escreve $wr "G$r" ($e.camada)
+          Escreve $wr "H$r" (@{ "LE" = "Esquerdo"; "Eixo" = "Eixo"; "LD" = "Direito" }[$f.posicao])
+          if ($gc -is [double]) { $wr.Range("I$r").Value2 = [math]::Round($gc / 100, 4) }
+          if ($null -ne $f.umidade) { $wr.Range("K$r").Value2 = [math]::Round([double]$f.umidade / 100, 4) }
+          # ótima: vale sempre a da Proj. Exec. (fórmula da coluna L, por material + procedência); o valor do campo só entra se não houver projeto
           $xl.Calculate()
-          $k = $wr.Range("K$r")
+          $k = $wr.Range("L$r")
           if ($k.Value2 -is [double] -and $k.Value2 -gt 0) {
             $otProj = [math]::Round($k.Value2 * 100, 2)
             if ($i -eq 1 -and $null -ne $e.otima -and [math]::Abs($otProj - [double]$e.otima) -gt 0.05) {
