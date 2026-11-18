@@ -344,7 +344,9 @@ const TAG={densidade:"DENS",benkelman:"VIGA",taxa:"TAXA",concreto:"CONC",betume:
 function rotTag(e){return e.tipo==="concreto"?"SÉRIE "+(e.registro||"?"):tagDe(e)+" R"+(e.registro||"?");}
 function tagDe(e){return e.tipo==="taxa"?(e.material==="RR-1C"?"RR1C":"EAI"):e.tipo==="concreto"?"SÉRIE":TAG[e.tipo];}
 function novaBandeja(c,u){return {estaca:"",posicao:u?u.posicao:"Eixo",temp:u?u.temp:"",bandeja:"",total:"",area:u?u.area:fmtIn(c.areaBandeja)};}
-function novoFuro(){return {estaca:"",posicao:"Eixo",altura:"",antes:"",depois:"",material:"",retido:"",umidade:""};}
+function novoFuro(){return {estaca:"",posicao:"Eixo",altura:"",antes:"",depois:"",material:"",retido:"",umidade:"",p1:"",p2:"",tara:""};}
+// umidade pela frigideira: h = (P1 - P2) / (P2 - T) × 100
+function umidFrig(f){const a=num(f.p1),b=num(f.p2),t=num(f.tara);if(!ok(a)||!ok(b)||!ok(t)||b-t<=0||a<b)return NaN;return Math.round((a-b)/(b-t)*1000)/10;}
 function fmtIn(v){return v===""||v==null?"":String(v).replace(".",",");}
 
 function situacao(e){
@@ -507,16 +509,35 @@ function desenharFuros(e){
         <label class="f">Material retirado <span class="u">(g)</span><input data-k="material" class="num" inputmode="decimal" value="${esc(f.material)}"></label>
         <label class="f">Retido na 3/4" <span class="u">(g, se houver)</span><input data-k="retido" class="num" inputmode="decimal" value="${esc(f.retido)}"></label>
         <label class="f">Umidade de campo <span class="u">(%)</span><input data-k="umidade" class="num" inputmode="decimal" value="${esc(f.umidade)}"></label>
+        <details class="full"${f.p1||f.p2||f.tara?" open":""}><summary class="note">Umidade pela frigideira (opcional: o app calcula a umidade)</summary>
+          <div class="grid g3" style="margin-top:8px">
+            <label class="f">Solo úmido + frigideira <span class="u">(g)</span><input data-k="p1" class="num" inputmode="decimal" value="${esc(f.p1)}"></label>
+            <label class="f">Solo seco + frigideira <span class="u">(g)</span><input data-k="p2" class="num" inputmode="decimal" value="${esc(f.p2)}"></label>
+            <label class="f">Tara da frigideira <span class="u">(g)</span><input data-k="tara" class="num" inputmode="decimal" value="${esc(f.tara)}"></label>
+          </div>
+          <p class="note" data-frig="${i}"></p>
+        </details>
       </div>
       <div class="calc" data-calc="${i}"></div>
     </section>`).join("");
   box.querySelectorAll(".furo").forEach(card=>{
     const i=+card.dataset.i,f=e.furos[i];
-    card.querySelectorAll("input[data-k]").forEach(inp=>inp.oninput=()=>{f[inp.dataset.k]=inp.value;tocou(e);salvar();atualizarCalcs(e);});
+    card.querySelectorAll("input[data-k]").forEach(inp=>inp.oninput=()=>{f[inp.dataset.k]=inp.value;
+      if(["p1","p2","tara"].includes(inp.dataset.k)){const h=umidFrig(f);if(ok(h)){f.umidade=fmtIn(h);card.querySelector('input[data-k="umidade"]').value=f.umidade;}}
+      tocou(e);salvar();atualizarCalcs(e);});
     card.querySelectorAll("[data-pos]").forEach(b=>b.onclick=()=>{f.posicao=b.dataset.pos;tocou(e);salvar();card.querySelectorAll("[data-pos]").forEach(x=>x.setAttribute("aria-pressed",x===b));});
     const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.furos.splice(i,1);tocou(e);salvar();desenharFuros(e);};
   });
   atualizarCalcs(e);
+}
+// parecer de aceitação do furo (GC e umidade), com o motivo
+function parecerFuro(c){
+  if(c.gcOk==null||c.hOk==null)return "";
+  const sn=v=>(v>=0?"+":"−")+fmt(Math.abs(v),1);
+  const mot=[];
+  if(!c.gcOk)mot.push(`GC ${fmt(c.gc,1)}% (mín. ${fmt(TOL.gcMin,0)}%)`);
+  if(!c.hOk)mot.push(c.dh>TOL.hMax?`umidade ${sn(c.dh)}% da ótima (máx. ${sn(TOL.hMax)}%)`:`umidade ${sn(c.dh)}% da ótima (mín. ${sn(TOL.hMin)}%)`);
+  return `<div style="grid-column:1/-1">Parecer<b><span class="chip ${mot.length?"bad":"ok"}">${mot.length?"REPROVADO":"APROVADO"}</span>${mot.length?` <span style="font-size:13px;font-weight:400">${esc(mot.join("; "))}</span>`:""}</b></div>`;
 }
 function atualizarCalcs(e){
   e.furos.forEach((f,i)=>{
@@ -528,7 +549,9 @@ function atualizarCalcs(e){
       <div>Dens. úmida<b>${fmt(c.dUmida,0)}</b></div>
       <div>Dens. seca<b>${fmt(c.dSeca,0)}</b></div>
       <div>Grau de compactação<b>${fmt(c.gc,1)}% ${gcChip}</b></div>
-      <div>Umidade × ótima<b>${hChip}</b></div>`;
+      <div>Umidade × ótima<b>${hChip}</b></div>`+parecerFuro(c);
+    const fr=document.querySelector(`[data-frig="${i}"]`);
+    if(fr){const f2=e.furos[i],h=umidFrig(f2);fr.textContent=ok(h)?`Água ${fmt(num(f2.p1)-num(f2.p2),0)} g ÷ solo seco ${fmt(num(f2.p2)-num(f2.tara),0)} g = ${fmt(h,1)}% (lançado em Umidade de campo)`:(f2.p1||f2.p2||f2.tara?"Preencha os três pesos (solo seco + frigideira maior que a tara).":"");}
   });
 }
 
