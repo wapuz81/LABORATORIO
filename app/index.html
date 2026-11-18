@@ -45,7 +45,7 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
 .grid .full{grid-column:1/-1}
 @media (min-width:560px){.grid.g3{grid-template-columns:repeat(3,minmax(0,1fr))}}
-label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+label.f,div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
 label.f span.u{color:var(--muted);font-weight:400}
 input,select,textarea{font:inherit;font-size:17px;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0}
 input:focus,select:focus,textarea:focus,button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:1px}
@@ -56,6 +56,9 @@ input.num{font-variant-numeric:tabular-nums;text-align:right}
 .btn.small{min-height:36px;padding:6px 10px;font-size:14px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .row>.grow{flex:1}
+.segm{display:grid;grid-template-columns:minmax(0,1.2fr) auto minmax(0,1fr) auto minmax(0,1.2fr) auto minmax(0,1fr);gap:6px;align-items:center}
+.segm input{text-align:center;padding-left:4px;padding-right:4px}
+.segm span{color:var(--muted);font-weight:600}
 .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg button{flex:1;border:0;background:var(--surface);color:var(--fg);font:inherit;font-weight:600;padding:10px 4px;min-height:44px}
 .seg button+button{border-left:1px solid var(--line)}
@@ -447,14 +450,25 @@ function cabecalhoComum(e){
       ${campo("c_registro","Registro (R)",e.registro,'inputmode="numeric"')}
       <label class="f">Data<input id="c_data" type="date" value="${esc(e.data)}"></label>
       <label class="f full">Rua<select id="c_rua">${opts(DB.cad.ruas.map(r=>r.nome),e.rua,"Escolha a rua")}</select></label>
-      ${campo("c_segmento","Segmento (estacas)",e.segmento,'placeholder="804+00 a 808+10" full')}
+      ${segCampo(e,"Segmento")}
       <label class="f">Camada<select id="c_camada">${opts(taxa?CAMADAS_TAXA:CAMADAS,e.camada,"Escolha")}</select></label>
       <label class="f">${taxa?"Emulsão":"Material"}<select id="c_material">${opts(taxa?EMULSOES:tiposMat(e.camada),e.material,e.camada||taxa?"Escolha":"Escolha a camada")}</select></label>
       ${precisaProc(e)?`<label class="f">Procedência<select id="c_procedencia">${opts(procsMat(e.material),e.procedencia,e.material?"Escolha":"Escolha o material")}</select></label>`:campo("c_procedencia","Procedência",e.procedencia)}
       <label class="f">Empreiteira<input id="c_empreiteira" list="dl_emp" value="${esc(e.empreiteira)}"><datalist id="dl_emp">${DB.cad.empreiteiras.map(x=>`<option value="${esc(x)}">`).join("")}</datalist></label>
     </div>`;
 }
+/* segmento: estaca + metro a estaca + metro (grava "804+00 a 808+10") */
+function segPartes(t){const m=String(t||"").match(/(\d+)\s*\+\s*([\d.,]*)(?:\s*(?:a|à|á|-)\s*(\d+)\s*\+\s*([\d.,]*))?/i);return m?[m[1],m[2]||"",m[3]||"",m[4]||""]:["","","",""];}
+function segMetro(v){v=String(v||"").trim().replace(".",",");if(!v)return "00";const [i,d]=v.split(",");return String(+i||0).padStart(2,"0")+(d?","+d:"");}
+function segTexto(p){const a=p[0]?`${+p[0]}+${segMetro(p[1])}`:"",b=p[2]?`${+p[2]}+${segMetro(p[3])}`:"";return a&&b?`${a} a ${b}`:(a||b);}
+function segCampo(e,rot){const p=segPartes(e.segmento);const inp=(i,ph,al)=>`<input id="c_seg${i}" inputmode="decimal" placeholder="${ph}" aria-label="${al}" value="${esc(p[i])}">`;
+  return `<div class="f full"><span>${rot} <span class="u">(estaca + metro a estaca + metro)</span></span><div class="segm">${inp(0,"804","Estaca inicial")}<span>+</span>${inp(1,"00","Metro inicial")}<span>a</span>${inp(2,"808","Estaca final")}<span>+</span>${inp(3,"10","Metro final")}</div></div>`;}
+function ligarSeg(e,aoMudar){[0,1,2,3].forEach(i=>{const el=document.getElementById("c_seg"+i);if(!el)return;el.addEventListener("input",()=>{
+  el.value=el.value.replace(/[^\d.,]/g,"");if(i%2===0)el.value=el.value.replace(/[.,]/g,"");
+  const p=[0,1,2,3].map(j=>document.getElementById("c_seg"+j).value);e.segmento=segTexto(p);
+  if(e.status==="exportado")e.status="alterado";salvar();aoMudar&&aoMudar("segmento");});});}
 function ligarComuns(e,aoMudar){
+  ligarSeg(e,aoMudar);
   const map={c_registro:"registro",c_data:"data",c_rua:"rua",c_segmento:"segmento",c_camada:"camada",c_material:"material",c_procedencia:"procedencia",c_empreiteira:"empreiteira"};
   Object.entries(map).forEach(([id,k])=>{const el=document.getElementById(id);if(!el)return;el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{e[k]=el.value;
     if(k==="camada"&&e.tipo!=="taxa"){const ms=$("#c_material");const lista=tiposMat(e.camada);
@@ -819,7 +833,7 @@ function telaBetume(id){
       ${campo("c_registro","Registro (R)",e.registro,'inputmode="numeric"')}
       <label class="f">Data<input id="c_data" type="date" value="${esc(e.data)}"></label>
       <label class="f full">Rua<select id="c_rua">${opts(DB.cad.ruas.map(r=>r.nome),e.rua,"Escolha a rua")}</select></label>
-      ${campo("c_segmento","Estaca(s)",e.segmento,'placeholder="02+00 a 02+10" full')}
+      ${segCampo(e,"Estaca(s)")}
       <div class="full"><span class="note">Faixa</span><div class="seg" role="group" aria-label="Faixa">${["B","C"].map(p=>`<button type="button" data-fx="${p}" aria-pressed="${e.faixa===p}">Faixa ${p}</button>`).join("")}</div></div>
       <label class="f">Camada<select id="c_camada">${opts(CAMADAS_CBUQ,e.camada,"Escolha")}</select></label>
       <div class="full"><span class="note">Lado</span><div class="seg" role="group" aria-label="Lado">${["LE","Eixo","LD"].map(p=>`<button type="button" data-lado="${p}" aria-pressed="${e.lado===p}">${p}</button>`).join("")}</div></div>
