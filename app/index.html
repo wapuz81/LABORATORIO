@@ -326,7 +326,7 @@ function render(){
   else if(v==="exportar") telaExport();
   const en=["dens","benk","taxa","conc","betu","cim"].includes(v)&&DB.ensaios.find(x=>x.id===tela.arg);
   if(en){const q=quemFez(en),alt=nomePessoa(en.alteradoPor);
-    $("#app").insertAdjacentHTML("afterbegin",`<p class="note" id="quemFez" style="margin:0">${q?`Preenchido por <b>${esc(q)}</b>`:"Quem preencheu: não informado (preencha o Laboratorista no fim da tela)"}${alt&&alt!==q?` · última alteração por <b>${esc(alt)}</b>`:""}</p>`);}
+    $("#app").insertAdjacentHTML("afterbegin",`<p class="note" id="quemFez" style="margin:0">${en.exemplo?"EXEMPLO do app: valores tirados de uma ficha só para mostrar como funciona. Ninguém preencheu.":q?`Preenchido por <b>${esc(q)}</b>`:"Quem preencheu: não informado (preencha o Laboratorista no fim da tela)"}${alt&&alt!==q?` · última alteração por <b>${esc(alt)}</b>`:""}</p>`);}
 }
 function nomePessoa(x){x=String(x||"").trim();return x==="adm"?"Takashi":x;}
 function quemFez(e){return nomePessoa(e.autor)||String(e.laboratorista||"").trim();}
@@ -504,7 +504,7 @@ function telaLista(){
         <button class="item" type="button" data-id="${e.id}">
           <span class="tag">${rotTag(e)}</span>
           <span class="main"><span class="t">${esc(e.tipo==="concreto"?(e.local||e.rua||"Local não informado"):(e.rua||"Rua não informada"))}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
-            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${quemFez(e)?" · por "+esc(quemFez(e)):""}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span></span>
+            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${e.exemplo?" · exemplo do app (ninguém preencheu)":quemFez(e)?" · por "+esc(quemFez(e)):" · quem: não informado"}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span></span>
           <span class="chip ${s.cls}">${s.t}</span>
         </button>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
