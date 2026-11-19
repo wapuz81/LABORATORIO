@@ -331,8 +331,8 @@ const BASE_REG={densidade:51,benkelman:46,concreto:134,"taxa|EAI":6,"taxa|RR-1C"
 function chaveReg(tipo,sub){return tipo==="taxa"?"taxa|"+(sub==="RR-1C"?"RR-1C":"EAI"):tipo;}
 function proxRegistro(tipo,sub,semId){
   const k=chaveReg(tipo,sub),base=Object.assign({},BASE_REG,DB.cad.cfg.baseReg||{});
-  const r=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo&&e.id!==semId&&chaveReg(e.tipo,e.material)===k).map(e=>parseInt(e.registro))
-    .concat(tipo==="taxa"?[]:lancTodos().filter(x=>x.tipo===tipo).map(x=>parseInt(x.registro)))
+  const r=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo&&e.id!==semId&&chaveReg(e.tipo,e.material)===k&&!/teste/i.test(e.registro||"")&&(e.criado||0)>=Date.parse("2026-11-19T00:00:00-03:00")).map(e=>parseInt(e.registro))
+    .concat(tipo==="taxa"?[]:lancTodos().filter(x=>x.tipo===tipo&&!/teste/i.test(x.registro||"")&&String(x.lancado||"")>="2026-11-19").map(x=>parseInt(x.registro)))
     .concat([num(base[k])]).filter(ok);
   return r.length?String(Math.max(...r)+1):"";
 }
