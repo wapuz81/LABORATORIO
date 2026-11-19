@@ -75,10 +75,12 @@ input.num{font-variant-numeric:tabular-nums;text-align:right}
 .list{display:flex;flex-direction:column;gap:10px}
 .item{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}
 .itemrow{display:flex;gap:8px;align-items:stretch}.itemrow .item{flex:1;min-width:0}.rmitem{flex:none;min-width:44px;padding:0 10px}
+.tagcol{display:flex;flex-direction:column;align-items:center;gap:3px;flex:none;max-width:96px}
+.tagcol .quem{font-size:11px;color:var(--muted);text-align:center;line-height:1.2;overflow-wrap:anywhere}
 .item .tag{font-family:var(--mono);font-size:13px;background:var(--sunk);border-radius:6px;padding:4px 6px;white-space:nowrap}
 .item .main{flex:1;min-width:0}
 .item .t{font-weight:700}
-.item .s{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .s{font-size:13px;color:var(--muted)}
 .empty{color:var(--muted);text-align:center;padding:28px 10px;border:1px dashed var(--line);border-radius:12px}
 .furo-h{display:flex;align-items:center;gap:8px}
 .furo-h b{flex:1}
@@ -177,6 +179,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
+const VERSAO_APP = "34 (19/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -505,13 +508,13 @@ function telaLista(){
         ${confirmando==="lista:"+e.id?`<div class="confirm"><b>Apagar ${rotTag(e)} · ${esc(e.rua||e.local||"")} (${dataBR(e.data)})?</b><span class="note">${e.exemplo?"É só um exemplo do app.":compartilhavel(e)?"Ele some de todos os celulares.":"Se ainda não foi para o PC, os dados se perdem."}</span>
           <div class="row"><button class="btn danger" type="button" data-apsim="${e.id}">Apagar</button><button class="btn" type="button" data-apnao="1">Cancelar</button></div></div>`:""}
         <div class="itemrow"><button class="item" type="button" data-id="${e.id}">
-          <span class="tag">${rotTag(e)}</span>
+          <span class="tagcol"><span class="tag">${rotTag(e)}</span><span class="quem">${e.exemplo?"exemplo":quemFez(e)?esc(quemFez(e)):"sem nome"}</span></span>
           <span class="main"><span class="t">${esc(e.tipo==="concreto"?(e.local||e.rua||"Local não informado"):(e.rua||"Rua não informada"))}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
-            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${e.exemplo?" · exemplo do app (ninguém preencheu)":quemFez(e)?" · por "+esc(quemFez(e)):" · quem: não informado"}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span></span>
-          <span class="chip ${s.cls}">${s.t}</span>
+            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span>
+            <span class="chip ${s.cls}" style="display:inline-block;margin-top:4px;white-space:normal">${s.t}</span></span>
         </button><button class="btn small danger rmitem" type="button" data-rm="${e.id}" aria-label="Apagar ensaio ${rotTag(e)}">🗑</button></div>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
-    <p class="note">${pend} ensaio(s) ainda não exportado(s). Os dados ficam guardados só neste aparelho até você exportar.</p>
+    <p class="note">Versão do app: ${VERSAO_APP}. ${DB.syncQuando&&!DB.syncErro?"Ensaio concluído vai para o PC sozinho.":pend+" ensaio(s) ainda não exportado(s). Os dados ficam guardados só neste aparelho até você exportar."}</p>
     ${blocoLancados()}`;
   if($("#lancAtu"))$("#lancAtu").onclick=()=>buscarLancados(true);
   if($("#syncAgora"))$("#syncAgora").onclick=()=>sincronizar(true);
@@ -527,7 +530,9 @@ function telaLista(){
   document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{confirmando="lista:"+b.dataset.rm;render();});
   document.querySelectorAll("[data-apnao]").forEach(b=>b.onclick=()=>{confirmando=null;render();});
   document.querySelectorAll("[data-apsim]").forEach(b=>b.onclick=()=>{apagarEnsaio(b.dataset.apsim);confirmando=null;toast("Ensaio apagado");render();});
-  setBar([{t:"Exportar para o PC",cls:"primary",f:()=>ir("exportar")}]);
+  const syncOk=DB.syncQuando&&!DB.syncErro&&envioCfg().chave;
+  if(syncOk){setBar(null);$("#app").insertAdjacentHTML("beforeend",`<div><button class="btn small" type="button" id="exReserva">Exportar arquivo (reserva)</button></div>`);$("#exReserva").onclick=()=>ir("exportar");}
+  else setBar([{t:"Exportar para o PC",cls:"primary",f:()=>ir("exportar")}]);
 }
 
 /* ================= Campos comuns ================= */
