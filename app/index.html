@@ -352,7 +352,7 @@ function proxRegistro(tipo,sub,semId){
 function novo(tipo){
   const c=DB.cad.cfg;
   const ult=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).sort((a,b)=>b.criado-a.criado)[0]||{};
-  const base={id:uid(),tipo,status:"rascunho",criado:Date.now(),registro:proxRegistro(tipo,tipo==="taxa"?(EMULSOES.includes(ult.material)?ult.material:"EAI"):""),regAuto:true,data:hoje(),
+  const base={id:uid(),tipo,status:"rascunho",criado:Date.now(),registro:"",data:hoje(),
     rua:ult.rua||"",segmento:"",camada:ult.camada||"",material:ult.material||"",procedencia:(tipo==="densidade"||tipo==="benkelman")?"":(ult.procedencia||""),
     empreiteira:ult.empreiteira||DB.cad.empreiteiras[0]||"",obs:"",laboratorista:c.laboratorista||""};
   let e;
@@ -421,7 +421,7 @@ function faltando(e){
 function vazio(e){
   if(e.exemplo||e.status!=="rascunho")return false;
   const tem=v=>String(v==null?"":v).trim()!=="";
-  if(tem(e.segmento)||tem(e.obs))return false;
+  if(tem(e.segmento)||tem(e.obs)||tem(e.registro))return false;
   if(e.tipo==="concreto")return !tem(e.elemento)&&!tem(e.slump)&&!tem(e.nf)&&!tem(e.placa)&&!tem(e.hDosagem);
   if(e.tipo==="densidade")return !(e.furos||[]).some(x=>["estaca","antes","depois","material","umidade","p1"].some(k=>tem(x[k])));
   if(e.tipo==="benkelman")return !["LE","EIXO","LD"].some(sd=>(e.leituras[sd]||[]).some(l=>tem(l.lf)||tem(l.estaca)));
@@ -552,7 +552,7 @@ function ligarComuns(e,aoMudar){
   const map={c_registro:"registro",c_data:"data",c_rua:"rua",c_segmento:"segmento",c_camada:"camada",c_material:"material",c_procedencia:"procedencia",c_empreiteira:"empreiteira"};
   Object.entries(map).forEach(([id,k])=>{const el=document.getElementById(id);if(!el)return;el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{e[k]=el.value;
     if(k==="registro")e.regAuto=false;
-    if(k==="material"&&e.tipo==="taxa"&&e.regAuto&&e.status==="rascunho"){e.registro=proxRegistro("taxa",e.material,e.id);const r=$("#c_registro");if(r)r.value=e.registro;}
+    if(k==="material"&&e.tipo==="taxa"){const r=$("#c_registro");if(r)r.placeholder="próximo: "+proxRegistro("taxa",e.material,e.id);}
     if(k==="camada"&&e.tipo!=="taxa"&&e.tipo!=="cimento"){const ms=$("#c_material");const lista=tiposMat(e.camada);
       if(e.material&&!lista.includes(e.material)){e.material="";e.procedencia="";const ps=$("#c_procedencia");if(ps&&ps.tagName==="SELECT")ps.innerHTML=opts([],"","Escolha o material");
         if(e.tipo==="densidade")["otima","densLab","densReal"].forEach(x=>{e[x]="";const i=document.getElementById("c_"+x);if(i)i.value="";});}
