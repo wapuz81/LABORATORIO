@@ -179,7 +179,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "35 (19/11)";
+const VERSAO_APP = "36 (19/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -1346,8 +1346,9 @@ async function enviarPC(nome,json){
 /* ===== ensaios compartilhados: planilha Google "ENSAIOS APP" (Apps Script, POST acao:'sync') ===== */
 var SYNC_CORTE=Date.parse("2026-11-19T00:00:00-03:00");   // ensaios mais antigos (testes) ficam só no celular
 function compartilhavel(e){return !e.exemplo&&(e.criado||0)>=SYNC_CORTE&&!vazio(e);}
-function conteudoE(e){const o={};Object.keys(e).forEach(k=>{if(!["_h","_hv","status","atualizado","alteradoPor","enviadoPC"].includes(k))o[k]=e[k];});return JSON.stringify(o);}
-function hashE(e){const t=conteudoE(e);let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return String(h);}
+function conteudoE(e,semAutor){const o={};Object.keys(e).forEach(k=>{if(!["_h","_hv","status","atualizado","alteradoPor","enviadoPC"].includes(k)&&!(semAutor&&k==="autor"))o[k]=e[k];});return JSON.stringify(o);}
+// o autor é gravado pelo Google ("adm" = Takashi): não conta como alteração
+function hashE(e){const t=conteudoE(e,true);let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return String(h);}
 var syncTimer=null,sincronizando=false,syncDeNovo=false;
 function agendarSync(){clearTimeout(syncTimer);syncTimer=setTimeout(()=>sincronizar(false),3000);}
 async function sincronizar(avisar){
@@ -1376,16 +1377,17 @@ async function sincronizar(avisar){
     (j.itens||[]).forEach(o=>{
       const i=DB.ensaios.findIndex(y=>y.id===o.id),loc=i>=0?DB.ensaios[i]:null;
       if(o.apagado){if(loc){DB.ensaios.splice(i,1);mudou=true;if(tela.arg===o.id){toast("Este ensaio foi apagado em outro celular");tela={nome:"lista"};abertoMudou=true;}}return;}
-      if(loc&&hashE(loc)!==loc._h&&(loc.atualizado||0)>(o.atualizado||0))return;   // a minha alteração é mais nova: sobe na próxima
+      // o que foi digitado aqui e ainda não subiu nunca é trocado pela versão da planilha: sobe na próxima sincronização
+      if(loc&&hashE(loc)!==loc._h)return;
       const n=Object.assign({},o);n.status=o.enviadoPC?"exportado":(loc&&loc.status==="exportado"?"exportado":"rascunho");delete n.enviadoPC;
       n._h=n._hv=hashE(n);
-      if(loc&&hashE(loc)===n._h&&loc.status===n.status){loc._h=loc._hv=n._h;loc.autor=n.autor;return;}
-      if(i>=0)DB.ensaios[i]=n;else DB.ensaios.push(n);mudou=true;
+      if(loc&&hashE(loc)===n._h){loc._h=loc._hv=n._h;loc.autor=n.autor;if(loc.status!==n.status&&loc.status!=="alterado"){loc.status=n.status;mudou=true;}return;}
+      // atualiza o mesmo objeto (a tela aberta continua gravando nele)
+      if(loc){Object.keys(loc).forEach(k=>delete loc[k]);Object.assign(loc,n);}else DB.ensaios.push(n);mudou=true;
       if(tela.arg===o.id){abertoMudou=true;if(loc&&o.alteradoPor&&o.alteradoPor!==j.quem)toast("Atualizado por "+o.alteradoPor);}
     });
     try{localStorage.setItem(CHAVE,JSON.stringify(DB));}catch(e){}
-    const digitando=document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
-    if(tela.nome==="lista"||(abertoMudou&&!digitando)||(tela.nome==="lista"&&mudou))render();
+    if(tela.nome==="lista"||abertoMudou)render();
     if(avisar)toast("Sincronizado");
   }catch(err){if(avisar)toast("Sem internet ou sem resposta do Google");}
   finally{sincronizando=false;if(syncDeNovo){syncDeNovo=false;agendarSync();}}
