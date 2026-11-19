@@ -74,6 +74,7 @@ input.num{font-variant-numeric:tabular-nums;text-align:right}
 .calc b{font-size:17px;color:var(--fg)}
 .list{display:flex;flex-direction:column;gap:10px}
 .item{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}
+.itemrow{display:flex;gap:8px;align-items:stretch}.itemrow .item{flex:1;min-width:0}.rmitem{flex:none;min-width:44px;padding:0 10px}
 .item .tag{font-family:var(--mono);font-size:13px;background:var(--sunk);border-radius:6px;padding:4px 6px;white-space:nowrap}
 .item .main{flex:1;min-width:0}
 .item .t{font-weight:700}
@@ -501,12 +502,14 @@ function telaLista(){
     </div>
     <div class="list">
       ${ens.length?ens.map(e=>{const s=situacao(e);return `
-        <button class="item" type="button" data-id="${e.id}">
+        ${confirmando==="lista:"+e.id?`<div class="confirm"><b>Apagar ${rotTag(e)} · ${esc(e.rua||e.local||"")} (${dataBR(e.data)})?</b><span class="note">${e.exemplo?"É só um exemplo do app.":compartilhavel(e)?"Ele some de todos os celulares.":"Se ainda não foi para o PC, os dados se perdem."}</span>
+          <div class="row"><button class="btn danger" type="button" data-apsim="${e.id}">Apagar</button><button class="btn" type="button" data-apnao="1">Cancelar</button></div></div>`:""}
+        <div class="itemrow"><button class="item" type="button" data-id="${e.id}">
           <span class="tag">${rotTag(e)}</span>
           <span class="main"><span class="t">${esc(e.tipo==="concreto"?(e.local||e.rua||"Local não informado"):(e.rua||"Rua não informada"))}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
             <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${e.exemplo?" · exemplo do app (ninguém preencheu)":quemFez(e)?" · por "+esc(quemFez(e)):" · quem: não informado"}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span></span>
           <span class="chip ${s.cls}">${s.t}</span>
-        </button>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
+        </button><button class="btn small danger rmitem" type="button" data-rm="${e.id}" aria-label="Apagar ensaio ${rotTag(e)}">🗑</button></div>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
     <p class="note">${pend} ensaio(s) ainda não exportado(s). Os dados ficam guardados só neste aparelho até você exportar.</p>
     ${blocoLancados()}`;
@@ -521,6 +524,9 @@ function telaLista(){
   if($("#limparEx")) $("#limparEx").onclick=()=>{DB.ensaios=DB.ensaios.filter(e=>!e.exemplo);try{localStorage.setItem(CHAVE+"-semexemplo","1")}catch(e){};salvar();render();};
   document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filtro=b.dataset.f;render();});
   document.querySelectorAll(".item").forEach(b=>b.onclick=()=>{const e=DB.ensaios.find(x=>x.id===b.dataset.id);ir(TELA[e.tipo],e.id);});
+  document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{confirmando="lista:"+b.dataset.rm;render();});
+  document.querySelectorAll("[data-apnao]").forEach(b=>b.onclick=()=>{confirmando=null;render();});
+  document.querySelectorAll("[data-apsim]").forEach(b=>b.onclick=()=>{apagarEnsaio(b.dataset.apsim);confirmando=null;toast("Ensaio apagado");render();});
   setBar([{t:"Exportar para o PC",cls:"primary",f:()=>ir("exportar")}]);
 }
 
@@ -577,11 +583,15 @@ function rodapeEnsaio(e){
         :`<div><button class="btn danger small" type="button" id="apagar">Apagar ensaio</button></div>`}
     </section>`;
 }
+function apagarEnsaio(id){const e=DB.ensaios.find(x=>x.id===id);if(!e)return;DB.ensaios=DB.ensaios.filter(x=>x.id!==id);
+  if(e._h)DB.apagados=(DB.apagados||[]).concat([{id,quando:Date.now()}]);
+  if(e.exemplo&&!DB.ensaios.some(x=>x.exemplo)){try{localStorage.setItem(CHAVE+"-semexemplo","1")}catch(_){}}
+  salvar();}
 function ligarRodape(e){
   $("#c_obs").oninput=ev=>{e.obs=ev.target.value;salvar();};
   $("#c_lab").oninput=ev=>{e.laboratorista=ev.target.value;DB.cad.cfg.laboratorista=ev.target.value;salvar();};
   if($("#apagar"))$("#apagar").onclick=()=>{confirmando=e.id;render();};
-  if($("#apSim"))$("#apSim").onclick=()=>{DB.ensaios=DB.ensaios.filter(x=>x.id!==e.id);if(e._h){DB.apagados=(DB.apagados||[]).concat([{id:e.id,quando:Date.now()}]);}salvar();toast("Ensaio apagado");ir("lista");};
+  if($("#apSim"))$("#apSim").onclick=()=>{apagarEnsaio(e.id);toast("Ensaio apagado");ir("lista");};
   if($("#apNao"))$("#apNao").onclick=()=>{confirmando=null;render();};
 }
 
