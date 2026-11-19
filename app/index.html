@@ -179,7 +179,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "34 (19/11)";
+const VERSAO_APP = "35 (19/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -510,7 +510,7 @@ function telaLista(){
         <div class="itemrow"><button class="item" type="button" data-id="${e.id}">
           <span class="tagcol"><span class="tag">${rotTag(e)}</span><span class="quem">${e.exemplo?"exemplo":quemFez(e)?esc(quemFez(e)):"sem nome"}</span></span>
           <span class="main"><span class="t">${esc(e.tipo==="concreto"?(e.local||e.rua||"Local não informado"):(e.rua||"Rua não informada"))}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
-            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span>
+            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}${!e.exemplo&&(e.criado||0)<SYNC_CORTE?" · 📱 só neste celular":""}</span>
             <span class="chip ${s.cls}" style="display:inline-block;margin-top:4px;white-space:normal">${s.t}</span></span>
         </button><button class="btn small danger rmitem" type="button" data-rm="${e.id}" aria-label="Apagar ensaio ${rotTag(e)}">🗑</button></div>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
@@ -518,6 +518,9 @@ function telaLista(){
     ${blocoLancados()}`;
   if($("#lancAtu"))$("#lancAtu").onclick=()=>buscarLancados(true);
   if($("#syncAgora"))$("#syncAgora").onclick=()=>sincronizar(true);
+  if($("#velhosApagar"))$("#velhosApagar").onclick=()=>{confirmando="velhos";render();};
+  if($("#velhosNao"))$("#velhosNao").onclick=()=>{confirmando=null;render();};
+  if($("#velhosSim"))$("#velhosSim").onclick=()=>{const n=DB.ensaios.filter(e=>!e.exemplo&&(e.criado||0)<SYNC_CORTE).length;DB.ensaios=DB.ensaios.filter(e=>e.exemplo||(e.criado||0)>=SYNC_CORTE);confirmando=null;salvar();toast(n+" ensaio(s) antigo(s) apagado(s) deste celular");render();};
   $("#nDens").onclick=()=>novo("densidade");
   $("#nBenk").onclick=()=>novo("benkelman");
   $("#nTaxa").onclick=()=>novo("taxa");
@@ -1393,7 +1396,11 @@ function blocoSync(){
   const txt=DB.syncErro?`<b style="color:var(--bad,#b42318)">Não sincronizou:</b> ${esc(DB.syncErro)}`
     :!c.chave?"Os ensaios são compartilhados entre os celulares. Toque em Sincronizar e digite a sua senha."
     :`Compartilhado com todos${q?` · sincronizado às ${String(q.getHours()).padStart(2,"0")}:${String(q.getMinutes()).padStart(2,"0")}`:""}${pend?` · ${pend} ensaio(s) para subir`:""}`;
-  return `<div class="card" style="flex-direction:row;align-items:center;gap:8px;padding:10px 12px"><span class="note grow">${txt}</span><button class="btn small" type="button" id="syncAgora">Sincronizar</button></div>`;
+  const velhos=DB.ensaios.filter(e=>!e.exemplo&&(e.criado||0)<SYNC_CORTE).length;
+  const limpar=!velhos?"":confirmando==="velhos"?`<div class="confirm"><b>Apagar ${velhos} ensaio(s) antigo(s) deste celular?</b><span class="note">São os criados antes de 19/11, que ficam só neste celular (não são compartilhados). Os que já foram para o PC continuam no Resumo.</span>
+      <div class="row"><button class="btn danger" type="button" id="velhosSim">Apagar ${velhos}</button><button class="btn" type="button" id="velhosNao">Cancelar</button></div></div>`
+    :`<div class="note">${velhos} ensaio(s) antigo(s) ficam só neste celular (📱). <button class="btn small" type="button" id="velhosApagar">Apagar os antigos deste celular</button></div>`;
+  return `<div class="card" style="flex-direction:row;align-items:center;gap:8px;padding:10px 12px"><span class="note grow">${txt}</span><button class="btn small" type="button" id="syncAgora">Sincronizar</button></div>${limpar}`;
 }
 setInterval(()=>{if(document.visibilityState==="visible"&&navigator.onLine!==false)sincronizar(false);},20000);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")sincronizar(false);});
