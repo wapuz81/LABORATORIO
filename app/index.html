@@ -325,15 +325,21 @@ function render(){
 }
 
 /* ================= Tela: lista ================= */
-function proxRegistro(tipo){
-  const r=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).map(e=>parseInt(e.registro))
-    .concat(lancTodos().filter(x=>x.tipo===tipo).map(x=>parseInt(x.registro))).filter(ok);
+// último registro de cada ensaio no Resumo (base de novembro: "2611 - Resumo Ensaios Trincheira R1", até outubro).
+// Imprimação (EAI) e pintura (RR-1C) têm numeração separada, como no Resumo. A aba NUMERACAO da planilha PARAMETROS DE PROJETO, se existir, substitui.
+const BASE_REG={densidade:51,benkelman:46,concreto:134,"taxa|EAI":6,"taxa|RR-1C":12,betume:14,cimento:0};
+function chaveReg(tipo,sub){return tipo==="taxa"?"taxa|"+(sub==="RR-1C"?"RR-1C":"EAI"):tipo;}
+function proxRegistro(tipo,sub,semId){
+  const k=chaveReg(tipo,sub),base=Object.assign({},BASE_REG,DB.cad.cfg.baseReg||{});
+  const r=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo&&e.id!==semId&&chaveReg(e.tipo,e.material)===k).map(e=>parseInt(e.registro))
+    .concat(tipo==="taxa"?[]:lancTodos().filter(x=>x.tipo===tipo).map(x=>parseInt(x.registro)))
+    .concat([num(base[k])]).filter(ok);
   return r.length?String(Math.max(...r)+1):"";
 }
 function novo(tipo){
   const c=DB.cad.cfg;
   const ult=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).sort((a,b)=>b.criado-a.criado)[0]||{};
-  const base={id:uid(),tipo,status:"rascunho",criado:Date.now(),registro:proxRegistro(tipo),data:hoje(),
+  const base={id:uid(),tipo,status:"rascunho",criado:Date.now(),registro:proxRegistro(tipo,tipo==="taxa"?(EMULSOES.includes(ult.material)?ult.material:"EAI"):""),regAuto:true,data:hoje(),
     rua:ult.rua||"",segmento:"",camada:ult.camada||"",material:ult.material||"",procedencia:(tipo==="densidade"||tipo==="benkelman")?"":(ult.procedencia||""),
     empreiteira:ult.empreiteira||DB.cad.empreiteiras[0]||"",obs:"",laboratorista:c.laboratorista||""};
   let e;
@@ -485,6 +491,8 @@ function ligarComuns(e,aoMudar){
   ligarSeg(e,aoMudar);
   const map={c_registro:"registro",c_data:"data",c_rua:"rua",c_segmento:"segmento",c_camada:"camada",c_material:"material",c_procedencia:"procedencia",c_empreiteira:"empreiteira"};
   Object.entries(map).forEach(([id,k])=>{const el=document.getElementById(id);if(!el)return;el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{e[k]=el.value;
+    if(k==="registro")e.regAuto=false;
+    if(k==="material"&&e.tipo==="taxa"&&e.regAuto&&e.status==="rascunho"){e.registro=proxRegistro("taxa",e.material,e.id);const r=$("#c_registro");if(r)r.value=e.registro;}
     if(k==="camada"&&e.tipo!=="taxa"&&e.tipo!=="cimento"){const ms=$("#c_material");const lista=tiposMat(e.camada);
       if(e.material&&!lista.includes(e.material)){e.material="";e.procedencia="";const ps=$("#c_procedencia");if(ps&&ps.tagName==="SELECT")ps.innerHTML=opts([],"","Escolha o material");
         if(e.tipo==="densidade")["otima","densLab","densReal"].forEach(x=>{e[x]="";const i=document.getElementById("c_"+x);if(i)i.value="";});}
@@ -1173,6 +1181,9 @@ function aplicarParametros(P){
   lin("FAIXAS CBUQ").forEach(r=>{const mm=n(r["Abertura (mm)"]);const p=PENEIRAS.find(x=>Math.abs(num(x[2])-mm)<0.011);if(!p)return;
     ["B","C"].forEach(f=>{const a=n(r["Faixa "+f+" mín. (%)"]),b=n(r["Faixa "+f+" máx. (%)"]);if(ok(a)&&ok(b)){fx[f][p[0]]=[a/100,b/100];temFx=true;}});});
   if(temFx){FAIXAS.B=fx.B;FAIXAS.C=fx.C;}
+  const NUM={"densidade in situ":"densidade","densidade":"densidade","viga benkelman":"benkelman","benkelman":"benkelman","concreto":"concreto","imprimacao":"taxa|EAI","pintura de ligacao":"taxa|RR-1C","cbuq teor de betume":"betume","cbuq":"betume","cimento":"cimento"};
+  const nb={};lin("NUMERACAO").forEach(r=>{const k=NUM[chave(r.Ensaio)],v=n(r["Último registro"]);if(k&&ok(v))nb[k]=v;});
+  cfg.baseReg=Object.keys(nb).length?nb:undefined;
   lin("TOLERANCIAS").forEach(r=>{const it=chave(r.Item),a=n(r["Mínimo"]),b=n(r["Máximo"]);
     if(it.startsWith("grau de compactacao - granulares")&&ok(a))TOL.gcMin=a;
     if(it.startsWith("umidade de compactacao")){if(ok(a))TOL.hMin=a;if(ok(b))TOL.hMax=b;}
