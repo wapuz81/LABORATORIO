@@ -179,7 +179,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "36 (19/11)";
+const VERSAO_APP = "37 (19/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -210,6 +210,13 @@ function carregar(){
   if((d.cad.cfg.tracosV||1)<TRACOS_V){
     d.cad.tracos.forEach(t=>{const p=PADRAO.tracos.find(x=>x.nome===t.nome)||{};DOSAGEM.forEach(([k])=>{if(t[k]==null||t[k]==="")t[k]=p[k]||"";});});
     d.cad.cfg.tracosV=TRACOS_V;
+  }
+  // sincronização v2 (19/11): a base passa a ser o conteúdo; quem já estava igual à planilha fica "sem alteração"
+  if((d.syncV||1)<2){
+    const dj=t=>{let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return String(h);};
+    d.ensaios.forEach(e=>{if(!e._h)return;
+      if(dj(conteudoE(e,true))===e._h||dj(conteudoE(e,false))===e._h){e._base=conteudoE(e,true);e._hv=hashE(e);}});
+    d.syncV=2;
   }
   return d;
 }
@@ -510,7 +517,7 @@ function telaLista(){
         <div class="itemrow"><button class="item" type="button" data-id="${e.id}">
           <span class="tagcol"><span class="tag">${rotTag(e)}</span><span class="quem">${e.exemplo?"exemplo":quemFez(e)?esc(quemFez(e)):"sem nome"}</span></span>
           <span class="main"><span class="t">${esc(e.tipo==="concreto"?(e.local||e.rua||"Local não informado"):(e.rua||"Rua não informada"))}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
-            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}${!e.exemplo&&(e.criado||0)<SYNC_CORTE?" · 📱 só neste celular":""}</span>
+            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${sujo(e)?" · ⟳ não sincronizado":""}${!e.exemplo&&(e.criado||0)<SYNC_CORTE?" · 📱 só neste celular":""}</span>
             <span class="chip ${s.cls}" style="display:inline-block;margin-top:4px;white-space:normal">${s.t}</span></span>
         </button><button class="btn small danger rmitem" type="button" data-rm="${e.id}" aria-label="Apagar ensaio ${rotTag(e)}">🗑</button></div>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
@@ -592,7 +599,7 @@ function rodapeEnsaio(e){
     </section>`;
 }
 function apagarEnsaio(id){const e=DB.ensaios.find(x=>x.id===id);if(!e)return;DB.ensaios=DB.ensaios.filter(x=>x.id!==id);
-  if(e._h)DB.apagados=(DB.apagados||[]).concat([{id,quando:Date.now()}]);
+  if(e._base!=null||e._h)DB.apagados=(DB.apagados||[]).concat([{id,quando:Date.now()}]);
   if(e.exemplo&&!DB.ensaios.some(x=>x.exemplo)){try{localStorage.setItem(CHAVE+"-semexemplo","1")}catch(_){}}
   salvar();}
 function ligarRodape(e){
@@ -1346,55 +1353,115 @@ async function enviarPC(nome,json){
 /* ===== ensaios compartilhados: planilha Google "ENSAIOS APP" (Apps Script, POST acao:'sync') ===== */
 var SYNC_CORTE=Date.parse("2026-11-19T00:00:00-03:00");   // ensaios mais antigos (testes) ficam só no celular
 function compartilhavel(e){return !e.exemplo&&(e.criado||0)>=SYNC_CORTE&&!vazio(e);}
-function conteudoE(e,semAutor){const o={};Object.keys(e).forEach(k=>{if(!["_h","_hv","status","atualizado","alteradoPor","enviadoPC"].includes(k)&&!(semAutor&&k==="autor"))o[k]=e[k];});return JSON.stringify(o);}
+function conteudoE(e,semAutor){const o={};Object.keys(e).forEach(k=>{if(!["_h","_hv","_base","_bt","status","atualizado","alteradoPor","enviadoPC"].includes(k)&&!(semAutor&&k==="autor"))o[k]=e[k];});return JSON.stringify(o);}
 // o autor é gravado pelo Google ("adm" = Takashi): não conta como alteração
 function hashE(e){const t=conteudoE(e,true);let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return String(h);}
+// _base = o ensaio como estava na planilha da última vez; diferente disso = alteração feita aqui que ainda não subiu
+function sujo(e){return compartilhavel(e)&&conteudoE(e,true)!==e._base;}
+// junta a versão deste celular com a da planilha, campo por campo:
+// o que só um lado mudou fica; se os dois mudaram o mesmo campo, fica o mais recente; nunca troca dado por vazio sem motivo
+function mesclar(base,mine,theirs,mineNovo){
+  const J=x=>JSON.stringify(x===undefined?null:x),tem=base!==undefined;
+  if(J(mine)===J(theirs))return theirs;
+  if(tem&&J(mine)===J(base))return theirs;
+  if(tem&&J(theirs)===J(base))return mine;
+  if(Array.isArray(mine)&&Array.isArray(theirs)){
+    const bb=Array.isArray(base)?base:null,r=[];
+    for(let i=0;i<Math.max(mine.length,theirs.length);i++){
+      if(i>=mine.length){if(bb&&i<bb.length)continue;r.push(theirs[i]);}
+      else if(i>=theirs.length){if(bb&&i<bb.length)continue;r.push(mine[i]);}
+      else r.push(mesclar(bb?bb[i]:undefined,mine[i],theirs[i],mineNovo));}
+    return r;}
+  const obj=x=>x&&typeof x==="object"&&!Array.isArray(x);
+  if(obj(mine)&&obj(theirs)){
+    const r={},bo=obj(base)?base:null;
+    new Set(Object.keys(mine).concat(Object.keys(theirs))).forEach(k=>{
+      const v=mesclar(bo?bo[k]:(tem?undefined:undefined),mine[k],theirs[k],mineNovo);if(v!==undefined)r[k]=v;});
+    return r;}
+  const vz=v=>v==null||String(v).trim()==="";
+  if(vz(theirs)&&!vz(mine))return mine;
+  if(vz(mine)&&!vz(theirs))return theirs;
+  return mineNovo?mine:theirs;
+}
+// troca o conteúdo sem trocar o objeto (a tela aberta continua gravando nele)
+function substituir(loc,n){
+  const obj=x=>x&&typeof x==="object";
+  const em=(d,o)=>{   // copia o em d mantendo os mesmos objetos internos (furos, bandejas, leituras)
+    if(Array.isArray(d)){d.length=Math.min(d.length,o.length);o.forEach((v,i)=>{if(obj(v)&&obj(d[i])&&Array.isArray(v)===Array.isArray(d[i]))em(d[i],v);else d[i]=v;});return;}
+    Object.keys(d).forEach(k=>{if(!(k in o))delete d[k];});
+    Object.keys(o).forEach(k=>{const v=o[k];if(obj(v)&&obj(d[k])&&Array.isArray(v)===Array.isArray(d[k]))em(d[k],v);else d[k]=v;});};
+  em(loc,JSON.parse(JSON.stringify(n)));}
 var syncTimer=null,sincronizando=false,syncDeNovo=false;
 function agendarSync(){clearTimeout(syncTimer);syncTimer=setTimeout(()=>sincronizar(false),3000);}
+async function chamarSync(c,itens){
+  const r=await fetch(c.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},redirect:"follow",
+    body:JSON.stringify({acao:"sync",chave:c.chave,desde:DB.syncSeq||0,itens})});
+  return r.json();
+}
+// aplica o que veio da planilha; devolve se mudou algo e se o ensaio aberto mudou
+function aplicarSync(j){
+  let mudou=false,abertoMudou=false;
+  (j.renumerados||[]).forEach(x=>{const e=DB.ensaios.find(y=>y.id===x.id);if(e&&e.registro!==x.registro)toast(`Outro celular já usou o nº ${e.registro}; este ensaio passou para ${x.registro}`);});
+  (j.itens||[]).forEach(o=>{
+    const i=DB.ensaios.findIndex(y=>y.id===o.id),loc=i>=0?DB.ensaios[i]:null;
+    if(o.apagado){if(loc){DB.ensaios.splice(i,1);mudou=true;if(tela.arg===o.id){toast("Este ensaio foi apagado em outro celular");tela={nome:"lista"};abertoMudou=true;}}return;}
+    const n=Object.assign({},o);delete n.enviadoPC;
+    const nBase=conteudoE(n,true);
+    if(!loc){n.status=o.enviadoPC?"exportado":"rascunho";n._base=nBase;n._bt=o.atualizado;n._hv=hashE(n);DB.ensaios.push(n);mudou=true;return;}
+    const antes=conteudoE(loc,true)+loc.status,status=o.enviadoPC?"exportado":(loc.status==="alterado"||loc.status==="exportado"?loc.status:"rascunho");
+    if(!sujo(loc)||conteudoE(loc,true)===nBase){substituir(loc,n);}
+    else{
+      // alteração dos dois lados: junta campo por campo
+      const base=loc._base?JSON.parse(loc._base):undefined,mine=JSON.parse(conteudoE(loc,true)),theirs=JSON.parse(nBase);
+      const r=mesclar(base,mine,theirs,(loc.atualizado||0)>(o.atualizado||0));
+      const at=loc.atualizado;substituir(loc,Object.assign(r,{autor:n.autor,atualizado:Math.max(at||0,o.atualizado||0),alteradoPor:n.alteradoPor}));
+    }
+    loc.status=status;loc._base=nBase;loc._bt=o.atualizado;loc._hv=hashE(loc);
+    if(conteudoE(loc,true)+loc.status!==antes){mudou=true;if(tela.arg===o.id){abertoMudou=true;if(o.alteradoPor&&o.alteradoPor!==j.quem)toast("Atualizado por "+o.alteradoPor);}}
+  });
+  return {mudou,abertoMudou};
+}
 async function sincronizar(avisar){
   const c=envioCfg();
   if(!garantirSenha(c,avisar))return;
   if(sincronizando){syncDeNovo=true;return;}
   if(navigator.onLine===false){if(avisar)toast("Sem internet: os ensaios sobem sozinhos quando o sinal voltar");return;}
   sincronizando=true;
+  const erro=j=>{
+    if(j&&!j.ok&&/chave|senha/i.test(j.erro||"")){envioSalvar({url:c.url,chave:""});if(avisar)toast("Senha errada; toque de novo para digitar");return true;}
+    if(!j||!j.ok){DB.syncErro=/sync|conteudo|JSON|Unexpected/i.test(j&&j.erro||"")?"O código do Google ainda é o antigo (falta colar o novo)":(j&&j.erro||"erro");salvar();if(avisar)toast("Não sincronizou: "+DB.syncErro);if(tela.nome==="lista")render();return true;}
+    return false;};
   try{
+    // 1º) traz o que os outros celulares mudaram e junta com o que foi digitado aqui
+    let j=await chamarSync(c,[]);if(erro(j))return;
+    DB.syncErro="";DB.quem=j.quem;DB.syncSeq=j.seq;
+    let r1=aplicarSync(j);
+    // 2º) sobe só o que foi alterado neste celular (já juntado)
     const enviados={};
-    const itens=DB.ensaios.filter(compartilhavel).map(e=>{const h=hashE(e);if(h!==e._hv){e._hv=h;e.atualizado=Date.now();}return [e,h];})
-      .filter(([e,h])=>h!==e._h).map(([e,h])=>{enviados[e.id]=h;const d=JSON.parse(conteudoE(e));
-        return {id:e.id,atualizado:e.atualizado,dados:d,pacote:e.concluido&&!faltando(e).length?pacote([e]).ensaios[0]:null};});
+    const itens=DB.ensaios.filter(sujo).map(e=>{const h=hashE(e);if(h!==e._hv){e._hv=h;e.atualizado=Date.now();}
+      const t=conteudoE(e,true);enviados[e.id]=t;const d=JSON.parse(conteudoE(e));
+      return {id:e.id,atualizado:e.atualizado||Date.now(),dados:d,pacote:e.concluido&&!faltando(e).length?pacote([e]).ensaios[0]:null};});
     const tombs=(DB.apagados||[]).slice();
     tombs.forEach(t=>itens.push({id:t.id,apagado:true,atualizado:t.quando}));
-    const r=await fetch(c.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},redirect:"follow",
-      body:JSON.stringify({acao:"sync",chave:c.chave,desde:DB.syncSeq||0,itens})});
-    const j=await r.json();
-    if(j&&!j.ok&&/chave|senha/i.test(j.erro||"")){envioSalvar({url:c.url,chave:""});if(avisar)toast("Senha errada; toque de novo para digitar");return;}
-    if(!j||!j.ok){DB.syncErro=/sync|conteudo|JSON|Unexpected/i.test(j&&j.erro||"")?"O código do Google ainda é o antigo (falta colar o novo)":(j&&j.erro||"erro");salvar();if(avisar)toast("Não sincronizou: "+DB.syncErro);if(tela.nome==="lista")render();return;}
-    DB.syncErro="";DB.quem=j.quem;DB.syncSeq=j.seq;DB.syncQuando=Date.now();
-    DB.apagados=(DB.apagados||[]).filter(t=>!tombs.some(x=>x.id===t.id));
-    DB.ensaios.forEach(e=>{if(enviados[e.id]&&hashE(e)===enviados[e.id]){e._h=enviados[e.id];if(!e.autor)e.autor=nomePessoa(j.quem);}});
-    let mudou=false,abertoMudou=false;
-    (j.renumerados||[]).forEach(x=>{const e=DB.ensaios.find(y=>y.id===x.id);if(e&&e.registro!==x.registro){toast(`Outro celular já usou o nº ${e.registro}; este ensaio passou para ${x.registro}`);e.registro=x.registro;e._h=e._hv=hashE(e);mudou=true;if(tela.arg===e.id){const ri=$("#c_registro");if(ri){ri.value=x.registro;const d=$("#c_regDica");if(d)d.innerHTML=dicaReg(e);}}}});
-    (j.itens||[]).forEach(o=>{
-      const i=DB.ensaios.findIndex(y=>y.id===o.id),loc=i>=0?DB.ensaios[i]:null;
-      if(o.apagado){if(loc){DB.ensaios.splice(i,1);mudou=true;if(tela.arg===o.id){toast("Este ensaio foi apagado em outro celular");tela={nome:"lista"};abertoMudou=true;}}return;}
-      // o que foi digitado aqui e ainda não subiu nunca é trocado pela versão da planilha: sobe na próxima sincronização
-      if(loc&&hashE(loc)!==loc._h)return;
-      const n=Object.assign({},o);n.status=o.enviadoPC?"exportado":(loc&&loc.status==="exportado"?"exportado":"rascunho");delete n.enviadoPC;
-      n._h=n._hv=hashE(n);
-      if(loc&&hashE(loc)===n._h){loc._h=loc._hv=n._h;loc.autor=n.autor;if(loc.status!==n.status&&loc.status!=="alterado"){loc.status=n.status;mudou=true;}return;}
-      // atualiza o mesmo objeto (a tela aberta continua gravando nele)
-      if(loc){Object.keys(loc).forEach(k=>delete loc[k]);Object.assign(loc,n);}else DB.ensaios.push(n);mudou=true;
-      if(tela.arg===o.id){abertoMudou=true;if(loc&&o.alteradoPor&&o.alteradoPor!==j.quem)toast("Atualizado por "+o.alteradoPor);}
-    });
+    let r2={mudou:false,abertoMudou:false};
+    if(itens.length){
+      j=await chamarSync(c,itens);if(erro(j))return;
+      DB.quem=j.quem;DB.syncSeq=j.seq;
+      DB.apagados=(DB.apagados||[]).filter(t=>!tombs.some(x=>x.id===t.id));
+      // o que subiu passa a ser a base (o que for digitado durante o envio continua como alteração)
+      DB.ensaios.forEach(e=>{if(enviados[e.id]!=null){e._base=enviados[e.id];if(!e.autor)e.autor=nomePessoa(j.quem);}});
+      r2=aplicarSync(j);
+    }
+    DB.syncQuando=Date.now();
     try{localStorage.setItem(CHAVE,JSON.stringify(DB));}catch(e){}
-    if(tela.nome==="lista"||abertoMudou)render();
+    if(tela.nome==="lista"||r1.abertoMudou||r2.abertoMudou)render();
     if(avisar)toast("Sincronizado");
   }catch(err){if(avisar)toast("Sem internet ou sem resposta do Google");}
   finally{sincronizando=false;if(syncDeNovo){syncDeNovo=false;agendarSync();}}
 }
 function blocoSync(){
   const c=envioCfg();if(!c.url)return "";
-  const q=DB.syncQuando?new Date(DB.syncQuando):null,pend=DB.ensaios.filter(e=>compartilhavel(e)&&hashE(e)!==e._h).length;
+  const q=DB.syncQuando?new Date(DB.syncQuando):null,pend=DB.ensaios.filter(sujo).length;
   const txt=DB.syncErro?`<b style="color:var(--bad,#b42318)">Não sincronizou:</b> ${esc(DB.syncErro)}`
     :!c.chave?"Os ensaios são compartilhados entre os celulares. Toque em Sincronizar e digite a sua senha."
     :`Compartilhado com todos${q?` · sincronizado às ${String(q.getHours()).padStart(2,"0")}:${String(q.getMinutes()).padStart(2,"0")}`:""}${pend?` · ${pend} ensaio(s) para subir`:""}`;
