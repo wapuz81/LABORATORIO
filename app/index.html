@@ -324,7 +324,12 @@ function render(){
   else if(v==="cim") telaCim(tela.arg);
   else if(v==="cadastros") telaCad();
   else if(v==="exportar") telaExport();
+  const en=["dens","benk","taxa","conc","betu","cim"].includes(v)&&DB.ensaios.find(x=>x.id===tela.arg);
+  if(en){const q=quemFez(en),alt=nomePessoa(en.alteradoPor);
+    $("#app").insertAdjacentHTML("afterbegin",`<p class="note" id="quemFez" style="margin:0">${q?`Preenchido por <b>${esc(q)}</b>`:"Quem preencheu: não informado (preencha o Laboratorista no fim da tela)"}${alt&&alt!==q?` · última alteração por <b>${esc(alt)}</b>`:""}</p>`);}
 }
+function nomePessoa(x){x=String(x||"").trim();return x==="adm"?"Takashi":x;}
+function quemFez(e){return nomePessoa(e.autor)||String(e.laboratorista||"").trim();}
 
 /* ================= Tela: lista ================= */
 // último registro de cada ensaio no Resumo (base de novembro: "2611 - Resumo Ensaios Trincheira R1", até outubro).
@@ -354,7 +359,7 @@ function novo(tipo){
   const ult=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).sort((a,b)=>b.criado-a.criado)[0]||{};
   const base={id:uid(),tipo,status:"rascunho",criado:Date.now(),registro:"",data:hoje(),
     rua:ult.rua||"",segmento:"",camada:ult.camada||"",material:ult.material||"",procedencia:(tipo==="densidade"||tipo==="benkelman")?"":(ult.procedencia||""),
-    empreiteira:ult.empreiteira||DB.cad.empreiteiras[0]||"",obs:"",laboratorista:c.laboratorista||""};
+    empreiteira:ult.empreiteira||DB.cad.empreiteiras[0]||"",obs:"",laboratorista:c.laboratorista||"",autor:nomePessoa(DB.quem)||c.laboratorista||""};
   let e;
   if(tipo==="densidade"){
     const m={};
@@ -499,7 +504,7 @@ function telaLista(){
         <button class="item" type="button" data-id="${e.id}">
           <span class="tag">${rotTag(e)}</span>
           <span class="main"><span class="t">${esc(e.tipo==="concreto"?(e.local||e.rua||"Local não informado"):(e.rua||"Rua não informada"))}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
-            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${e.autor&&e.autor!==DB.quem?" · por "+esc(e.autor):""}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span></span>
+            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${quemFez(e)?" · por "+esc(quemFez(e)):""}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span></span>
           <span class="chip ${s.cls}">${s.t}</span>
         </button>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
@@ -1347,7 +1352,7 @@ async function sincronizar(avisar){
     if(!j||!j.ok){DB.syncErro=/sync|conteudo|JSON|Unexpected/i.test(j&&j.erro||"")?"O código do Google ainda é o antigo (falta colar o novo)":(j&&j.erro||"erro");salvar();if(avisar)toast("Não sincronizou: "+DB.syncErro);if(tela.nome==="lista")render();return;}
     DB.syncErro="";DB.quem=j.quem;DB.syncSeq=j.seq;DB.syncQuando=Date.now();
     DB.apagados=(DB.apagados||[]).filter(t=>!tombs.some(x=>x.id===t.id));
-    DB.ensaios.forEach(e=>{if(enviados[e.id]&&hashE(e)===enviados[e.id]){e._h=enviados[e.id];if(!e.autor)e.autor=j.quem;}});
+    DB.ensaios.forEach(e=>{if(enviados[e.id]&&hashE(e)===enviados[e.id]){e._h=enviados[e.id];if(!e.autor)e.autor=nomePessoa(j.quem);}});
     let mudou=false,abertoMudou=false;
     (j.renumerados||[]).forEach(x=>{const e=DB.ensaios.find(y=>y.id===x.id);if(e&&e.registro!==x.registro){toast(`Outro celular já usou o nº ${e.registro}; este ensaio passou para ${x.registro}`);e.registro=x.registro;e._h=e._hv=hashE(e);mudou=true;if(tela.arg===e.id){const ri=$("#c_registro");if(ri){ri.value=x.registro;const d=$("#c_regDica");if(d)d.innerHTML=dicaReg(e);}}}});
     (j.itens||[]).forEach(o=>{
