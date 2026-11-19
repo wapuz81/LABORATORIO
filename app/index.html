@@ -179,7 +179,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "38 (23/11)";
+const VERSAO_APP = "39 (23/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -221,8 +221,12 @@ function carregar(){
   return d;
 }
 let avisouArmazenamento=false;
+function gravarNoCelular(){
+  const ensaios=DB.ensaios.filter(e=>e.preenchido!==false);
+  localStorage.setItem(CHAVE,JSON.stringify({...DB,ensaios}));
+}
 function salvar(){
-  try{ localStorage.setItem(CHAVE,JSON.stringify(DB)); }
+  try{ gravarNoCelular(); }
   catch(e){ if(!avisouArmazenamento){ toast("Atenção: este navegador não está guardando os dados. Exporte antes de fechar."); avisouArmazenamento=true; } }
   if(typeof agendarSync==="function")agendarSync();
 }
@@ -311,7 +315,12 @@ function exemplos(){
 /* ================= Navegação ================= */
 let tela={nome:"lista"}, filtro="todos", confirmando=null;
 function ir(nome,arg){if(nome!=="exportar")reenviarTodos=false;
-  if(tela.arg&&tela.arg!==arg){const v=DB.ensaios.find(x=>x.id===tela.arg);if(v&&vazio(v)){DB.ensaios=DB.ensaios.filter(x=>x!==v);salvar();toast("Ensaio vazio descartado");}}tela={nome,arg};confirmando=null;render();window.scrollTo(0,0);}
+  if(tela.arg&&tela.arg!==arg){
+    const v=DB.ensaios.find(x=>x.id===tela.arg);
+    if(v?.preenchido===false)DB.ensaios=DB.ensaios.filter(x=>x!==v);
+  }
+  tela={nome,arg};confirmando=null;render();window.scrollTo(0,0);
+}
 $("#btnVoltar").onclick=()=>ir("lista");
 $("#btnMenu").onclick=()=>ir(tela.nome==="cadastros"?"lista":"cadastros");
 
@@ -368,7 +377,7 @@ function proxRegistro(tipo,sub,semId){
 function novo(tipo){
   const c=DB.cad.cfg;
   const ult=DB.ensaios.filter(e=>e.tipo===tipo&&!e.exemplo).sort((a,b)=>b.criado-a.criado)[0]||{};
-  const base={id:uid(),tipo,status:"rascunho",criado:Date.now(),registro:"",data:hoje(),
+  const base={id:uid(),tipo,status:"rascunho",preenchido:false,criado:Date.now(),registro:"",data:hoje(),
     rua:ult.rua||"",segmento:"",camada:ult.camada||"",material:ult.material||"",procedencia:(tipo==="densidade"||tipo==="benkelman")?"":(ult.procedencia||""),
     empreiteira:ult.empreiteira||DB.cad.empreiteiras[0]||"",obs:"",laboratorista:c.laboratorista||"",autor:nomePessoa(DB.quem)||c.laboratorista||""};
   let e;
@@ -397,7 +406,7 @@ function novo(tipo){
   } else {
     e=Object.assign(base,{k:fmtIn(c.kViga),admManual:"",leituras:{LE:[],EIXO:[],LD:[]}});
   }
-  DB.ensaios.push(e);salvar();ir(TELA[tipo],e.id);
+  DB.ensaios.push(e);ir(TELA[tipo],e.id);
 }
 const TELA={densidade:"dens",benkelman:"benk",taxa:"taxa",concreto:"conc",betume:"betu",cimento:"cim"};
 const TAG={densidade:"DENS",benkelman:"VIGA",taxa:"TAXA",concreto:"CONC",betume:"BETUME",cimento:"CIM"};
@@ -436,6 +445,7 @@ function faltando(e){
 // nada digitado além do que o app preenche sozinho
 function vazio(e){
   if(e.exemplo||e.status!=="rascunho")return false;
+  if(e.preenchido!==undefined)return !e.preenchido;
   const tem=v=>String(v==null?"":v).trim()!=="";
   if(tem(e.segmento)||tem(e.obs)||tem(e.registro))return false;
   if(e.tipo==="concreto")return !tem(e.elemento)&&!tem(e.slump)&&!tem(e.nf)&&!tem(e.placa)&&!tem(e.hDosagem);
@@ -511,13 +521,16 @@ function telaLista(){
       ${[["todos","Todos"],["pend","Não exportados"],["densidade","Densidade"],["benkelman","Benkelman"],["concreto","Concreto"],["taxa","Imprimação/Pintura"],["betume","CBUQ"],["cimento","Cimento"]].map(([k,t])=>`<button type="button" class="btn small" data-f="${k}" aria-pressed="${filtro===k}" style="${filtro===k?"background:var(--accent-soft);border-color:var(--accent)":""}">${t}</button>`).join("")}
     </div>
     <div class="list">
-      ${ens.length?ens.map(e=>{const s=situacao(e);return `
+      ${ens.length?ens.map(e=>{
+        const s=situacao(e);
+        const soNesteCelular=!e.exemplo&&((e.criado||0)<SYNC_CORTE||(vazio(e)&&e._base==null&&!e._h));
+        return `
         ${confirmando==="lista:"+e.id?`<div class="confirm"><b>Apagar ${rotTag(e)} · ${esc(e.rua||e.local||"")} (${dataBR(e.data)})?</b><span class="note">${e.exemplo?"É só um exemplo do app.":compartilhavel(e)?"Ele some de todos os celulares.":"Se ainda não foi para o PC, os dados se perdem."}</span>
           <div class="row"><button class="btn danger" type="button" data-apsim="${e.id}">Apagar</button><button class="btn" type="button" data-apnao="1">Cancelar</button></div></div>`:""}
         <div class="itemrow"><button class="item" type="button" data-id="${e.id}">
           <span class="tagcol"><span class="tag">${rotTag(e)}</span><span class="quem">${e.exemplo?"exemplo":quemFez(e)?esc(quemFez(e)):"sem nome"}</span></span>
           <span class="main"><span class="t">${esc(e.tipo==="concreto"?(e.local||e.rua||"Local não informado"):(e.rua||"Rua não informada"))}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
-            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${sujo(e)?" · ⟳ não sincronizado":""}${!e.exemplo&&(e.criado||0)<SYNC_CORTE?" · 📱 só neste celular":""}</span>
+            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${sujo(e)?" · ⟳ não sincronizado":""}${soNesteCelular?" · 📱 só neste celular":""}</span>
             <span class="chip ${s.cls}" style="display:inline-block;margin-top:4px;white-space:normal">${s.t}</span></span>
         </button><button class="btn small danger rmitem" type="button" data-rm="${e.id}" aria-label="Apagar ensaio ${rotTag(e)}">🗑</button></div>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
@@ -572,7 +585,7 @@ function segCampo(e,rot){const p=segPartes(e.segmento);const inp=(i,ph,al)=>`<in
 function ligarSeg(e,aoMudar){[0,1,2,3].forEach(i=>{const el=document.getElementById("c_seg"+i);if(!el)return;el.addEventListener("input",()=>{
   el.value=el.value.replace(/[^\d.,]/g,"");if(i%2===0)el.value=el.value.replace(/[.,]/g,"");
   const p=[0,1,2,3].map(j=>document.getElementById("c_seg"+j).value);e.segmento=segTexto(p);
-  if(e.status==="exportado")e.status="alterado";salvar();aoMudar&&aoMudar("segmento");});});}
+  tocou(e);salvar();aoMudar&&aoMudar("segmento");});});}
 function ligarComuns(e,aoMudar){
   ligarSeg(e,aoMudar);
   const map={c_registro:"registro",c_data:"data",c_rua:"rua",c_segmento:"segmento",c_camada:"camada",c_material:"material",c_procedencia:"procedencia",c_empreiteira:"empreiteira"};
@@ -587,7 +600,7 @@ function ligarComuns(e,aoMudar){
       if(e.tipo==="densidade")["otima","densLab","densReal"].forEach(x=>{e[x]="";const i=document.getElementById("c_"+x);if(i)i.value="";});}
     if(k==="procedencia"&&e.tipo==="densidade"){const m=material(e.material,e.procedencia);
       ["otima","densLab","densReal"].forEach(x=>{e[x]=m&&m[x]!==""&&m[x]!=null?fmtIn(m[x]):"";const i=document.getElementById("c_"+x);if(i)i.value=e[x];});}
-    if(e.status==="exportado")e.status="alterado";salvar();aoMudar&&aoMudar(k);});});
+    tocou(e);salvar();aoMudar&&aoMudar(k);});});
 }
 function rodapeEnsaio(e){
   return `<section class="card">
@@ -603,8 +616,8 @@ function apagarEnsaio(id){const e=DB.ensaios.find(x=>x.id===id);if(!e)return;DB.
   if(e.exemplo&&!DB.ensaios.some(x=>x.exemplo)){try{localStorage.setItem(CHAVE+"-semexemplo","1")}catch(_){}}
   salvar();}
 function ligarRodape(e){
-  $("#c_obs").oninput=ev=>{e.obs=ev.target.value;salvar();};
-  $("#c_lab").oninput=ev=>{e.laboratorista=ev.target.value;DB.cad.cfg.laboratorista=ev.target.value;salvar();};
+  $("#c_obs").oninput=ev=>{e.obs=ev.target.value;tocou(e);salvar();};
+  $("#c_lab").oninput=ev=>{e.laboratorista=ev.target.value;DB.cad.cfg.laboratorista=ev.target.value;tocou(e);salvar();};
   if($("#apagar"))$("#apagar").onclick=()=>{confirmando=e.id;render();};
   if($("#apSim"))$("#apSim").onclick=()=>{apagarEnsaio(e.id);toast("Ensaio apagado");ir("lista");};
   if($("#apNao"))$("#apNao").onclick=()=>{confirmando=null;render();};
@@ -637,13 +650,16 @@ function telaDens(id){
     if(k==="densLab"||k==="densReal"||k==="otima"){const m=material(e.material,e.procedencia);if(m){m[k]=ev.target.value;}}
     if(k==="areiaCone"||k==="densAreia")DB.cad.cfg[k]=ev.target.value;
     salvar();atualizarCalcs(e);};});
-  $("#addFuro").onclick=()=>{const u=e.furos[e.furos.length-1]||{};const f=novoFuro();f.altura=u.altura||"";e.furos.push(f);tocou(e);salvar();desenharFuros(e);
+  $("#addFuro").onclick=()=>{const u=e.furos[e.furos.length-1]||{};const f=novoFuro();f.altura=u.altura||"";e.furos.push(f);tocou(e,false);salvar();desenharFuros(e);
     const cards=document.querySelectorAll(".furo");cards[cards.length-1].scrollIntoView({behavior:"smooth",block:"start"});};
   ligarRodape(e);
   desenharFuros(e);
   setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e)}]);
 }
-function tocou(e){if(e.status==="exportado")e.status="alterado";}
+function tocou(e,preencheu=true){
+  if(preencheu)e.preenchido=true;
+  if(e.status==="exportado")e.status="alterado";
+}
 function desenharFuros(e){
   const box=$("#furos");
   box.innerHTML=e.furos.map((f,i)=>`
@@ -675,7 +691,7 @@ function desenharFuros(e){
       if(["p1","p2","tara"].includes(inp.dataset.k)){const h=umidFrig(f);if(ok(h)){f.umidade=fmtIn(h);card.querySelector('input[data-k="umidade"]').value=f.umidade;}}
       tocou(e);salvar();atualizarCalcs(e);});
     card.querySelectorAll("[data-pos]").forEach(b=>b.onclick=()=>{f.posicao=b.dataset.pos;tocou(e);salvar();card.querySelectorAll("[data-pos]").forEach(x=>x.setAttribute("aria-pressed",x===b));});
-    const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.furos.splice(i,1);tocou(e);salvar();desenharFuros(e);};
+    const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.furos.splice(i,1);tocou(e,false);salvar();desenharFuros(e);};
   });
   atualizarCalcs(e);
 }
@@ -742,7 +758,7 @@ function telaBenk(id){
 function novaLeit(e,L){const u=L[L.length-1];
   return {estaca:proxEstaca(L)||(e.segmento||"").split(/\s*(?:a|á|à|-)\s*/i)[0]||"",li:u?u.li:fmtIn(DB.cad.cfg.li),l25:"",lf:""};}
 function addLeit(e){const L=e.leituras[ladoAtual];L.push(novaLeit(e,L));
-  tocou(e);salvar();desenharLeit(e);const ins=document.querySelectorAll('#leit input[data-k="lf"]');ins[ins.length-1].focus();}
+  tocou(e,false);salvar();desenharLeit(e);const ins=document.querySelectorAll('#leit input[data-k="lf"]');ins[ins.length-1].focus();}
 function desenharLeit(e){
   const L=e.leituras[ladoAtual];
   if(!L.length) L.push(novaLeit(e,L));   // cada lado já abre com uma linha pronta para digitar
@@ -758,7 +774,7 @@ function desenharLeit(e){
     tr.querySelectorAll("input").forEach(inp=>inp.oninput=()=>{l[inp.dataset.k]=inp.value;tocou(e);salvar();atualizarBenk(e);});
     const lf=tr.querySelector('input[data-k="lf"]');lf.enterKeyHint="next";
     lf.onkeydown=ev=>{if(ev.key==="Enter"){ev.preventDefault();if(i===L.length-1)addLeit(e);else{const nx=document.querySelector(`#leit tr[data-i="${i+1}"] input[data-k="lf"]`);nx&&nx.focus();}}};
-    tr.querySelector("[data-rm]").onclick=()=>{L.splice(i,1);tocou(e);salvar();desenharLeit(e);};});
+    tr.querySelector("[data-rm]").onclick=()=>{L.splice(i,1);tocou(e,false);salvar();desenharLeit(e);};});
   atualizarBenk(e);
 }
 function atualizarBenk(e){
@@ -892,7 +908,7 @@ function telaTaxa(id){
     if(k==="material"){e.proj=fmtIn(e.material==="RR-1C"?c.projRR:c.projEAI);$("#c_proj").value=e.proj;nota();}
     desenharBandejas(e);});
   $("#c_proj").oninput=ev=>{e.proj=ev.target.value;tocou(e);salvar();nota();atualizarBandejas(e);};
-  $("#addBand").onclick=()=>{const u=e.bandejas[e.bandejas.length-1];e.bandejas.push(novaBandeja(c,u));tocou(e);salvar();desenharBandejas(e);
+  $("#addBand").onclick=()=>{const u=e.bandejas[e.bandejas.length-1];e.bandejas.push(novaBandeja(c,u));tocou(e,false);salvar();desenharBandejas(e);
     const cards=document.querySelectorAll(".band");cards[cards.length-1].scrollIntoView({behavior:"smooth",block:"start"});};
   ligarRodape(e);nota();desenharBandejas(e);
   setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e)}]);
@@ -914,7 +930,7 @@ function desenharBandejas(e){
   document.querySelectorAll(".band").forEach(card=>{const i=+card.dataset.i,b=e.bandejas[i];
     card.querySelectorAll("input[data-k]").forEach(inp=>inp.oninput=()=>{b[inp.dataset.k]=inp.value;tocou(e);salvar();atualizarBandejas(e);});
     card.querySelectorAll("[data-pos]").forEach(x=>x.onclick=()=>{b.posicao=x.dataset.pos;tocou(e);salvar();card.querySelectorAll("[data-pos]").forEach(y=>y.setAttribute("aria-pressed",y===x));});
-    const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.bandejas.splice(i,1);tocou(e);salvar();desenharBandejas(e);};});
+    const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.bandejas.splice(i,1);tocou(e,false);salvar();desenharBandejas(e);};});
   atualizarBandejas(e);
 }
 function atualizarBandejas(e){
@@ -977,7 +993,7 @@ function telaCim(id){
   const campos=bgtc?["tipoCimento","teorProj","estacaCP","nf","placa","hUsina","hMoldagem","cpsComp","idadesComp","cpsTracao","idadeTracao","moldador"]:["tipoCimento","teorProj","densidade","espessura"];
   campos.forEach(k=>{const el=$("#c_"+k);if(el)el.oninput=()=>{e[k]=el.value;if(k==="teorProj")c.cimProj=num(el.value);tocou(e);salvar();if(bgtc)tempoCim(e);else atualizarBandejasCim(e);};});
   if(bgtc){document.querySelectorAll("[data-lado]").forEach(x=>x.onclick=()=>{e.lado=x.dataset.lado;tocou(e);salvar();document.querySelectorAll("[data-lado]").forEach(y=>y.setAttribute("aria-pressed",y===x));});tempoCim(e);}
-  else{$("#addBand").onclick=()=>{const u=e.bandejas[e.bandejas.length-1];e.bandejas.push(novaBandejaCim(c,u));tocou(e);salvar();desenharBandejasCim(e);
+  else{$("#addBand").onclick=()=>{const u=e.bandejas[e.bandejas.length-1];e.bandejas.push(novaBandejaCim(c,u));tocou(e,false);salvar();desenharBandejasCim(e);
       const cards=document.querySelectorAll(".band");cards[cards.length-1].scrollIntoView({behavior:"smooth",block:"start"});};
     desenharBandejasCim(e);}
   ligarRodape(e);
@@ -1001,7 +1017,7 @@ function desenharBandejasCim(e){
   document.querySelectorAll(".band").forEach(card=>{const i=+card.dataset.i,b=e.bandejas[i];
     card.querySelectorAll("input[data-k]").forEach(inp=>inp.oninput=()=>{b[inp.dataset.k]=inp.value;if(inp.dataset.k==="area")DB.cad.cfg.areaCim=inp.value;tocou(e);salvar();atualizarBandejasCim(e);});
     card.querySelectorAll("[data-pos]").forEach(x=>x.onclick=()=>{b.posicao=x.dataset.pos;tocou(e);salvar();card.querySelectorAll("[data-pos]").forEach(y=>y.setAttribute("aria-pressed",y===x));});
-    const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.bandejas.splice(i,1);tocou(e);salvar();desenharBandejasCim(e);};});
+    const rm=card.querySelector("[data-rm]");if(rm)rm.onclick=()=>{e.bandejas.splice(i,1);tocou(e,false);salvar();desenharBandejasCim(e);};});
   atualizarBandejasCim(e);
 }
 function atualizarBandejasCim(e){
@@ -1459,7 +1475,7 @@ async function sincronizar(avisar){
       r2=aplicarSync(j);
     }
     DB.syncQuando=Date.now();
-    try{localStorage.setItem(CHAVE,JSON.stringify(DB));}catch(e){}
+    try{gravarNoCelular();}catch(e){}
     if(tela.nome==="lista"||r1.abertoMudou||r2.abertoMudou)render();
     if(avisar)toast("Sincronizado");
   }catch(err){if(avisar)toast("Sem internet ou sem resposta do Google");}
