@@ -298,7 +298,8 @@ function exemplos(){
 
 /* ================= Navegação ================= */
 let tela={nome:"lista"}, filtro="todos", confirmando=null;
-function ir(nome,arg){if(nome!=="exportar")reenviarTodos=false;tela={nome,arg};confirmando=null;render();window.scrollTo(0,0);}
+function ir(nome,arg){if(nome!=="exportar")reenviarTodos=false;
+  if(tela.arg&&tela.arg!==arg){const v=DB.ensaios.find(x=>x.id===tela.arg);if(v&&vazio(v)){DB.ensaios=DB.ensaios.filter(x=>x!==v);salvar();toast("Ensaio vazio descartado");}}tela={nome,arg};confirmando=null;render();window.scrollTo(0,0);}
 $("#btnVoltar").onclick=()=>ir("lista");
 $("#btnMenu").onclick=()=>ir(tela.nome==="cadastros"?"lista":"cadastros");
 
@@ -391,7 +392,50 @@ function novoFuro(){return {estaca:"",posicao:"Eixo",altura:"",antes:"",depois:"
 function umidFrig(f){const a=num(f.p1),b=num(f.p2),t=num(f.tara);if(!ok(a)||!ok(b)||!ok(t)||b-t<=0||a<b)return NaN;return Math.round((a-b)/(b-t)*1000)/10;}
 function fmtIn(v){return v===""||v==null?"":String(v).replace(".",",");}
 
+/* ===== ensaio completo? (incompleto não vai para o PC; vazio é descartado ao sair) ===== */
+function faltando(e){
+  const f=[],tem=v=>String(v==null?"":v).trim()!=="";
+  if(!tem(e.registro))f.push(e.tipo==="concreto"?"nº da série":"registro");
+  if(!tem(e.data))f.push("data");
+  if(e.tipo==="concreto"){
+    if(!tem(e.local)&&!tem(e.rua))f.push("local");
+    if(!tem(e.estrutura))f.push("estrutura");
+    if(!tem(e.elemento))f.push("elemento");
+    if(!ok(num(e.slump)))f.push("slump");
+    if(!ok(num(e.cps)))f.push("nº de CPs");
+    return f;}
+  if(!tem(e.rua))f.push("rua");
+  if(e.tipo!=="betume"&&!tem(e.camada))f.push("camada");
+  if(e.tipo==="densidade"||e.tipo==="benkelman"){if(!tem(e.material))f.push("material");if(!tem(e.procedencia))f.push("procedência");}
+  if(e.tipo==="densidade"&&!(e.furos||[]).some(x=>ok(calcFuro(e,x).gc)))f.push("um furo completo");
+  if(e.tipo==="benkelman"&&!resumoBenk(e).n)f.push("leituras");
+  if(e.tipo==="taxa"&&!(e.bandejas||[]).some(b=>ok(calcBandeja(e,b).taxa)))f.push("uma bandeja completa");
+  if(e.tipo==="betume"&&!ok(calcBetume(e).teor))f.push("pesagens do teor");
+  if(e.tipo==="cimento"){
+    if(e.servico==="BGTC"){if(!tem(e.estacaCP))f.push("estaca da coleta");if(!((num(e.cpsComp)||0)+(num(e.cpsTracao)||0)))f.push("nº de CPs");}
+    else if(!(e.bandejas||[]).some(b=>ok(calcBandejaCim(e,b).teor)))f.push("uma bandeja completa");}
+  return f;
+}
+// nada digitado além do que o app preenche sozinho
+function vazio(e){
+  if(e.exemplo||e.status!=="rascunho")return false;
+  const tem=v=>String(v==null?"":v).trim()!=="";
+  if(tem(e.segmento)||tem(e.obs))return false;
+  if(e.tipo==="concreto")return !tem(e.elemento)&&!tem(e.slump)&&!tem(e.nf)&&!tem(e.placa)&&!tem(e.hDosagem);
+  if(e.tipo==="densidade")return !(e.furos||[]).some(x=>["estaca","antes","depois","material","umidade","p1"].some(k=>tem(x[k])));
+  if(e.tipo==="benkelman")return !["LE","EIXO","LD"].some(sd=>(e.leituras[sd]||[]).some(l=>tem(l.lf)||tem(l.estaca)));
+  if(e.tipo==="taxa")return !(e.bandejas||[]).some(b=>tem(b.estaca)||tem(b.total)||tem(b.bandeja));
+  if(e.tipo==="betume")return !tem(e.mistura)&&!tem(e.agregado)&&!tem(e.papelAgreg);
+  if(e.tipo==="cimento")return !(e.bandejas||[]).some(b=>tem(b.estaca)||tem(b.total)||tem(b.tara))&&!tem(e.estacaCP)&&!tem(e.hMoldagem);
+  return false;
+}
+function concluir(e,msg){
+  const f=faltando(e);
+  if(f.length){toast("Falta preencher: "+f.join(", ")+". Sem isso o ensaio não vai para o PC.");return;}
+  toast(msg||"Ensaio guardado no aparelho");ir("lista");
+}
 function situacao(e){
+  if(!e.exemplo&&e.status==="rascunho"){const f=faltando(e);if(f.length)return {cls:"warn",t:"incompleto: falta "+f[0]};}
   if(precisaProc(e)&&!e.exemplo&&(!e.material||!e.procedencia)) return {cls:"warn",t:"falta material/procedência"};
   if(e.tipo==="densidade"){
     const cs=(e.furos||[]).map(f=>calcFuro(e,f)).filter(c=>ok(c.gc));
@@ -562,7 +606,7 @@ function telaDens(id){
     const cards=document.querySelectorAll(".furo");cards[cards.length-1].scrollIntoView({behavior:"smooth",block:"start"});};
   ligarRodape(e);
   desenharFuros(e);
-  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
+  setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e)}]);
 }
 function tocou(e){if(e.status==="exportado")e.status="alterado";}
 function desenharFuros(e){
@@ -658,7 +702,7 @@ function telaBenk(id){
   $("#addLeit").onclick=()=>addLeit(e);
   ligarRodape(e);
   desenharLeit(e);
-  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
+  setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e)}]);
 }
 function novaLeit(e,L){const u=L[L.length-1];
   return {estaca:proxEstaca(L)||(e.segmento||"").split(/\s*(?:a|á|à|-)\s*/i)[0]||"",li:u?u.li:fmtIn(DB.cad.cfg.li),l25:"",lf:""};}
@@ -765,7 +809,7 @@ function telaConc(id){
   document.querySelectorAll("[data-agora]").forEach(b=>b.onclick=()=>{const k=b.dataset.agora;e[k]=agora();$("#c_"+k).value=e[k];tocou(e);salvar();atualizarConc(e);});
   document.querySelectorAll("[data-lado]").forEach(b=>b.onclick=()=>{e.lado=b.dataset.lado;tocou(e);salvar();document.querySelectorAll("[data-lado]").forEach(x=>x.setAttribute("aria-pressed",x===b));});
   ligarRodape(e);atualizarConc(e);
-  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Série guardada no aparelho");ir("lista");}}]);
+  setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e,"Série guardada no aparelho")}]);
 }
 function atualizarConc(e){
   const c=calcConc(e);
@@ -810,7 +854,7 @@ function telaTaxa(id){
   $("#addBand").onclick=()=>{const u=e.bandejas[e.bandejas.length-1];e.bandejas.push(novaBandeja(c,u));tocou(e);salvar();desenharBandejas(e);
     const cards=document.querySelectorAll(".band");cards[cards.length-1].scrollIntoView({behavior:"smooth",block:"start"});};
   ligarRodape(e);nota();desenharBandejas(e);
-  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
+  setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e)}]);
 }
 function desenharBandejas(e){
   $("#bandejas").innerHTML=e.bandejas.map((b,i)=>`
@@ -896,7 +940,7 @@ function telaCim(id){
       const cards=document.querySelectorAll(".band");cards[cards.length-1].scrollIntoView({behavior:"smooth",block:"start"});};
     desenharBandejasCim(e);}
   ligarRodape(e);
-  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
+  setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e)}]);
 }
 function tempoCim(e){const el=$("#cimTempo");if(!el)return;let t=minutos(e.hMoldagem)-minutos(e.hUsina);if(ok(t)&&t<0)t+=1440;
   el.innerHTML=`<div>Usina → moldagem<b>${ok(t)?Math.floor(t/60)+"h"+String(t%60).padStart(2,"0"):"–"}</b></div><div>Total de CPs<b>${(num(e.cpsComp)||0)+(num(e.cpsTracao)||0)}</b></div>`;}
@@ -986,7 +1030,7 @@ function telaBetume(id){
     tocou(e);salvar();document.querySelectorAll("[data-fx]").forEach(x=>x.setAttribute("aria-pressed",x===b));desenharGran(e);});
   document.querySelectorAll("[data-lado]").forEach(b=>b.onclick=()=>{e.lado=b.dataset.lado;tocou(e);salvar();document.querySelectorAll("[data-lado]").forEach(x=>x.setAttribute("aria-pressed",x===b));});
   ligarRodape(e);desenharGran(e);
-  setBar([{t:"Concluir",cls:"primary",f:()=>{toast("Ensaio guardado no aparelho");ir("lista");}}]);
+  setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e)}]);
 }
 function peneirasDe(e){const lim=FAIXAS[e.faixa]||{};return PENEIRAS.filter(([k])=>lim[k]||ok(num((e.retidos||{})[k])));}
 function desenharGran(e){
@@ -1289,11 +1333,11 @@ function telaExport(){
     setBar(null);return;
   }
   const sel=pend.length?pend:reais;
-  const semProc=sel.filter(e=>precisaProc(e)&&(!e.material||!e.procedencia));
+  const semProc=sel.filter(e=>faltando(e).length);
   if(semProc.length){
-    $("#app").innerHTML=`<section class="card"><b>Escolha o material e a procedência antes de enviar</b>
-      <span class="note">Sem a procedência o PC não sabe qual projeto usar. Abra cada ensaio abaixo e escolha na lista.</span>
-      <div class="list">${semProc.map(e=>`<button class="item" type="button" data-abrir="${e.id}">${rotTag(e)} · ${esc(e.rua||"")} · ${dataBR(e.data)}</button>`).join("")}</div></section>`;
+    $("#app").innerHTML=`<section class="card"><b>Complete os ensaios abaixo antes de enviar</b>
+      <span class="note">Ensaio incompleto não vai para o PC. Abra cada um e preencha o que falta (ou apague, se não vale).</span>
+      <div class="list">${semProc.map(e=>`<button class="item" type="button" data-abrir="${e.id}">${rotTag(e)} · ${esc(e.rua||e.local||"")} · ${dataBR(e.data)}<br><small>falta: ${esc(faltando(e).join(", "))}</small></button>`).join("")}</div></section>`;
     document.querySelectorAll("[data-abrir]").forEach(b=>b.onclick=()=>{const e=DB.ensaios.find(x=>x.id===b.dataset.abrir);if(e)ir(TELA[e.tipo],e.id);});
     setBar(null);return;
   }
