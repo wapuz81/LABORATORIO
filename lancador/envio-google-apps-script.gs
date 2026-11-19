@@ -37,6 +37,7 @@ function doPost(e) {
     var d = JSON.parse(e.postData.contents);
     var quem = quemEnviou(d.chave);
     if (!quem) return resposta({ ok: false, erro: 'senha errada' });
+    if (d.acao === 'sync') return resposta(sincronizar(d, quem));
     var conteudo = String(d.conteudo || '');
     var pac = JSON.parse(conteudo);                       // precisa ser um JSON do app
     if (pac.app !== 'ensaios-campo-trincheira') return resposta({ ok: false, erro: 'arquivo não é do app' });
@@ -129,5 +130,82 @@ function ligarCopiaAutomatica() {
   ScriptApp.getProjectTriggers().forEach(function (g) { if (g.getHandlerFunction() === 'aoMudarParametros') ScriptApp.deleteTrigger(g); });
   ScriptApp.newTrigger('aoMudarParametros').forSpreadsheet(PLANILHA_PARAMETROS).onChange().create();
   copiarParametros();
+}
+// ---------- Ensaios compartilhados entre os celulares ----------
+// Todos os ensaios ficam na planilha Google "ENSAIOS APP" (criada sozinha na pasta do lançador, uma linha por ensaio).
+// Cada celular manda o que mudou e recebe o que os outros mudaram (POST {acao:'sync'}). Vale a última alteração.
+// Quando um ensaio é CONCLUÍDO no app, este código grava o arquivo dele na ENTRADA e o PC lança sozinho, sem exportar.
+var NOME_PLANILHA_ENSAIOS = 'ENSAIOS APP';
+var COLS = ['id', 'tipo', 'registro', 'data', 'rua / local', 'autor', 'última alteração por', 'alterado em', 'seq', 'situação', 'enviado ao PC', 'dados (não mexer)'];
+function planilhaEnsaios() {
+  var pr = PropertiesService.getScriptProperties(), id = pr.getProperty('PLANILHA_ENSAIOS'), ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = SpreadsheetApp.create(NOME_PLANILHA_ENSAIOS);
+    var f = DriveApp.getFileById(ss.getId()), raiz = DriveApp.getFolderById(PASTA_ENTRADA).getParents().next();
+    f.moveTo(raiz);
+    var sh0 = ss.getSheets()[0]; sh0.setName('ENSAIOS');
+    sh0.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight('bold').setBackground('#DDEBF7');
+    sh0.setFrozenRows(1); sh0.setColumnWidth(COLS.length, 120);
+    pr.setProperty('PLANILHA_ENSAIOS', ss.getId());
+  }
+  return ss.getSheetByName('ENSAIOS') || ss.getSheets()[0];
+}
+// rodar UMA VEZ pelo editor depois de colar o código: cria a planilha ENSAIOS APP e pede a autorização
+function criarPlanilhaEnsaios() { var sh = planilhaEnsaios(); Logger.log('Planilha ENSAIOS APP: ' + sh.getParent().getUrl()); }
+function chaveNum(o) { return o.tipo === 'taxa' ? 'taxa|' + (o.material === 'RR-1C' ? 'RR-1C' : 'EAI') : o.tipo; }
+function sincronizar(d, quem) {
+  var lock = LockService.getScriptLock(); lock.waitLock(25000);
+  try {
+    var sh = planilhaEnsaios(), pr = PropertiesService.getScriptProperties();
+    var seq = Number(pr.getProperty('SEQ') || 0);
+    var n = sh.getLastRow(), linhas = n > 1 ? sh.getRange(2, 1, n - 1, COLS.length).getValues() : [];
+    var porId = {}; linhas.forEach(function (l, i) { if (l[0]) porId[l[0]] = i; });
+    var recebidos = {}, renumerados = [];
+    (d.itens || []).forEach(function (it) {
+      if (!it || !it.id) return;
+      var i = porId[it.id], atual = i == null ? null : linhas[i];
+      var antigo = atual ? JSON.parse(atual[11] || '{}') : null;
+      if (antigo && Number(antigo.atualizado || 0) > Number(it.atualizado || 0)) return;   // a planilha já tem uma alteração mais nova
+      var o = it.apagado ? (antigo || { id: it.id }) : it.dados;
+      if (!o) return;
+      o.atualizado = Number(it.atualizado || Date.now());
+      if (!antigo) o.autor = o.autor || quem;
+      else o.autor = antigo.autor || o.autor || quem;
+      o.alteradoPor = quem;
+      // ensaio novo com número automático já usado por outro celular: pega o próximo livre
+      if (!antigo && !it.apagado && o.regAuto) {
+        var k = chaveNum(o), usados = {}, maior = 0;
+        linhas.forEach(function (l) { if (!l[0] || l[9] === 'apagado') return; var x = JSON.parse(l[11] || '{}');
+          if (chaveNum(x) !== k || /teste/i.test(String(x.registro))) return; usados[String(x.registro).trim()] = 1; maior = Math.max(maior, parseInt(x.registro, 10) || 0); });
+        if (usados[String(o.registro).trim()]) { o.registro = String(maior + 1); renumerados.push({ id: o.id, registro: o.registro }); }
+      }
+      seq++;
+      var sit = it.apagado ? 'apagado' : (o.concluido ? 'concluído' : 'rascunho');
+      var enviado = atual ? atual[10] : '';
+      if (sit === 'concluído' && it.pacote && o.tipo !== 'cimento' && String(enviado) !== String(o.atualizado)) {
+        var nome = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyMMdd HHmm') + ' - ' + o.tipo + ' R' + (o.registro || '') + ' - ' + quem;
+        nome = nome.replace(/[\\\/:*?"<>|;]/g, ' ').slice(0, 110) + '.json';
+        var pac = { app: 'ensaios-campo-trincheira', versao: 1, exportado: new Date().toISOString(), ensaios: [it.pacote] };
+        DriveApp.getFolderById(PASTA_ENTRADA).createFile(nome, JSON.stringify(pac, null, 1), 'application/json');
+        enviado = String(o.atualizado);
+      }
+      if (sit === 'apagado') o.apagado = true;
+      var linha = [o.id, o.tipo || '', String(o.registro || ''), o.data || '', o.rua || o.local || '', o.autor || '', quem,
+                   new Date(o.atualizado), seq, sit, enviado, JSON.stringify(o)];
+      if (i == null) { linhas.push(linha); porId[o.id] = linhas.length - 1; sh.appendRow(linha); }
+      else { linhas[i] = linha; sh.getRange(i + 2, 1, 1, COLS.length).setValues([linha]); }
+      sh.getRange(porId[o.id] + 2, 3).setNumberFormat('@').setValue(String(o.registro || ''));
+      recebidos[o.id] = 1;
+    });
+    pr.setProperty('SEQ', String(seq));
+    var desde = Number(d.desde || 0), mudados = [];
+    linhas.forEach(function (l) {
+      if (!l[0] || Number(l[8]) <= desde) return;
+      var o = JSON.parse(l[11] || '{}'); o.enviadoPC = !!l[10] && String(l[10]) === String(o.atualizado);
+      mudados.push(o);
+    });
+    return { ok: true, quem: quem, seq: seq, itens: mudados, renumerados: renumerados };
+  } finally { lock.releaseLock(); }
 }
 function resposta(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }

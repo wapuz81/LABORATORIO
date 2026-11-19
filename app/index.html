@@ -213,6 +213,7 @@ let avisouArmazenamento=false;
 function salvar(){
   try{ localStorage.setItem(CHAVE,JSON.stringify(DB)); }
   catch(e){ if(!avisouArmazenamento){ toast("Atenção: este navegador não está guardando os dados. Exporte antes de fechar."); avisouArmazenamento=true; } }
+  if(typeof agendarSync==="function")agendarSync();
 }
 DB=carregar();
 if(!DB.ensaios.length && !localStorage.getItem(CHAVE+"-semexemplo")){ DB.ensaios=exemplos(); }
@@ -432,7 +433,9 @@ function vazio(e){
 function concluir(e,msg){
   const f=faltando(e);
   if(f.length){toast("Falta preencher: "+f.join(", ")+". Sem isso o ensaio não vai para o PC.");return;}
-  toast(msg||"Ensaio guardado no aparelho");ir("lista");
+  e.concluido=true;salvar();
+  const c=envioCfg();
+  toast(c.url&&c.chave?"Concluído: vai para o PC sozinho na próxima sincronização":(msg||"Ensaio guardado no aparelho"));ir("lista");sincronizar(false);
 }
 function situacao(e){
   if(!e.exemplo&&e.status==="rascunho"){const f=faltando(e);if(f.length)return {cls:"warn",t:"incompleto: falta "+f[0]};}
@@ -485,6 +488,7 @@ function telaLista(){
       <button class="btn primary" type="button" id="nBetu" style="grid-column:1/-1">+ CBUQ: teor de betume<small>extração e granulometria (faixa B ou C)</small></button>
       <button class="btn primary" type="button" id="nCim" style="grid-column:1/-1">+ Cimento: reciclagem / BGTC<small>taxa de cimento pela bandeja ou moldagem de CPs</small></button>
     </section>
+    ${blocoSync()}
     ${temEx?`<div class="note card" style="gap:8px">Os dois ensaios marcados como EXEMPLO usam valores das fichas R41 (densidade) e R32 (Benkelman) só para mostrar como o app funciona.
       <div><button class="btn small" type="button" id="limparEx">Apagar exemplos</button></div></div>`:""}
     <div class="filter" role="group" aria-label="Filtro">
@@ -495,13 +499,14 @@ function telaLista(){
         <button class="item" type="button" data-id="${e.id}">
           <span class="tag">${rotTag(e)}</span>
           <span class="main"><span class="t">${esc(e.tipo==="concreto"?(e.local||e.rua||"Local não informado"):(e.rua||"Rua não informada"))}${e.exemplo?' <span class="chip warn">EXEMPLO</span>':""}</span>
-            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · exportado":""}</span></span>
+            <span class="s" style="display:block">${dataBR(e.data)} · ${e.tipo==="concreto"?esc((e.estrutura||"")+" "+(e.elemento||"")):(e.tipo==="betume"?"Faixa "+esc(e.faixa||"?"):esc(e.material||"material?"))+" · "+esc(e.camada||"camada?")}${e.status==="exportado"?" · no PC":(e.concluido?" · concluído":"")}${e.autor&&e.autor!==DB.quem?" · por "+esc(e.autor):""}${compartilhavel(e)&&hashE(e)!==e._h?" · ⟳ não sincronizado":""}</span></span>
           <span class="chip ${s.cls}">${s.t}</span>
         </button>`;}).join(""):`<div class="empty">Nenhum ensaio aqui. Toque em “+ Densidade in situ” ou “+ Viga Benkelman” para começar.</div>`}
     </div>
     <p class="note">${pend} ensaio(s) ainda não exportado(s). Os dados ficam guardados só neste aparelho até você exportar.</p>
     ${blocoLancados()}`;
   if($("#lancAtu"))$("#lancAtu").onclick=()=>buscarLancados(true);
+  if($("#syncAgora"))$("#syncAgora").onclick=()=>sincronizar(true);
   $("#nDens").onclick=()=>novo("densidade");
   $("#nBenk").onclick=()=>novo("benkelman");
   $("#nTaxa").onclick=()=>novo("taxa");
@@ -571,7 +576,7 @@ function ligarRodape(e){
   $("#c_obs").oninput=ev=>{e.obs=ev.target.value;salvar();};
   $("#c_lab").oninput=ev=>{e.laboratorista=ev.target.value;DB.cad.cfg.laboratorista=ev.target.value;salvar();};
   if($("#apagar"))$("#apagar").onclick=()=>{confirmando=e.id;render();};
-  if($("#apSim"))$("#apSim").onclick=()=>{DB.ensaios=DB.ensaios.filter(x=>x.id!==e.id);salvar();toast("Ensaio apagado");ir("lista");};
+  if($("#apSim"))$("#apSim").onclick=()=>{DB.ensaios=DB.ensaios.filter(x=>x.id!==e.id);if(e._h){DB.apagados=(DB.apagados||[]).concat([{id:e.id,quando:Date.now()}]);}salvar();toast("Ensaio apagado");ir("lista");};
   if($("#apNao"))$("#apNao").onclick=()=>{confirmando=null;render();};
 }
 
@@ -1315,6 +1320,65 @@ async function enviarPC(nome,json){
   if(!j||!j.ok)throw new Error(j&&j.erro||"resposta inesperada");
   return j;
 }
+/* ===== ensaios compartilhados: planilha Google "ENSAIOS APP" (Apps Script, POST acao:'sync') ===== */
+var SYNC_CORTE=Date.parse("2026-11-19T00:00:00-03:00");   // ensaios mais antigos (testes) ficam só no celular
+function compartilhavel(e){return !e.exemplo&&(e.criado||0)>=SYNC_CORTE&&!vazio(e);}
+function conteudoE(e){const o={};Object.keys(e).forEach(k=>{if(!["_h","_hv","status","atualizado","alteradoPor","enviadoPC"].includes(k))o[k]=e[k];});return JSON.stringify(o);}
+function hashE(e){const t=conteudoE(e);let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return String(h);}
+var syncTimer=null,sincronizando=false,syncDeNovo=false;
+function agendarSync(){clearTimeout(syncTimer);syncTimer=setTimeout(()=>sincronizar(false),3000);}
+async function sincronizar(avisar){
+  const c=envioCfg();
+  if(!garantirSenha(c,avisar))return;
+  if(sincronizando){syncDeNovo=true;return;}
+  if(navigator.onLine===false){if(avisar)toast("Sem internet: os ensaios sobem sozinhos quando o sinal voltar");return;}
+  sincronizando=true;
+  try{
+    const enviados={};
+    const itens=DB.ensaios.filter(compartilhavel).map(e=>{const h=hashE(e);if(h!==e._hv){e._hv=h;e.atualizado=Date.now();}return [e,h];})
+      .filter(([e,h])=>h!==e._h).map(([e,h])=>{enviados[e.id]=h;const d=JSON.parse(conteudoE(e));
+        return {id:e.id,atualizado:e.atualizado,dados:d,pacote:e.concluido&&!faltando(e).length?pacote([e]).ensaios[0]:null};});
+    const tombs=(DB.apagados||[]).slice();
+    tombs.forEach(t=>itens.push({id:t.id,apagado:true,atualizado:t.quando}));
+    const r=await fetch(c.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},redirect:"follow",
+      body:JSON.stringify({acao:"sync",chave:c.chave,desde:DB.syncSeq||0,itens})});
+    const j=await r.json();
+    if(j&&!j.ok&&/chave|senha/i.test(j.erro||"")){envioSalvar({url:c.url,chave:""});if(avisar)toast("Senha errada; toque de novo para digitar");return;}
+    if(!j||!j.ok){DB.syncErro=/sync|conteudo|JSON|Unexpected/i.test(j&&j.erro||"")?"O código do Google ainda é o antigo (falta colar o novo)":(j&&j.erro||"erro");salvar();if(avisar)toast("Não sincronizou: "+DB.syncErro);if(tela.nome==="lista")render();return;}
+    DB.syncErro="";DB.quem=j.quem;DB.syncSeq=j.seq;DB.syncQuando=Date.now();
+    DB.apagados=(DB.apagados||[]).filter(t=>!tombs.some(x=>x.id===t.id));
+    DB.ensaios.forEach(e=>{if(enviados[e.id]&&hashE(e)===enviados[e.id]){e._h=enviados[e.id];if(!e.autor)e.autor=j.quem;}});
+    let mudou=false,abertoMudou=false;
+    (j.renumerados||[]).forEach(x=>{const e=DB.ensaios.find(y=>y.id===x.id);if(e&&e.registro!==x.registro){toast(`Outro celular já usou o nº ${e.registro}; este ensaio passou para ${x.registro}`);e.registro=x.registro;e._h=e._hv=hashE(e);mudou=true;if(tela.arg===e.id){const ri=$("#c_registro");if(ri){ri.value=x.registro;const d=$("#c_regDica");if(d)d.innerHTML=dicaReg(e);}}}});
+    (j.itens||[]).forEach(o=>{
+      const i=DB.ensaios.findIndex(y=>y.id===o.id),loc=i>=0?DB.ensaios[i]:null;
+      if(o.apagado){if(loc){DB.ensaios.splice(i,1);mudou=true;if(tela.arg===o.id){toast("Este ensaio foi apagado em outro celular");tela={nome:"lista"};abertoMudou=true;}}return;}
+      if(loc&&hashE(loc)!==loc._h&&(loc.atualizado||0)>(o.atualizado||0))return;   // a minha alteração é mais nova: sobe na próxima
+      const n=Object.assign({},o);n.status=o.enviadoPC?"exportado":(loc&&loc.status==="exportado"?"exportado":"rascunho");delete n.enviadoPC;
+      n._h=n._hv=hashE(n);
+      if(loc&&hashE(loc)===n._h&&loc.status===n.status){loc._h=loc._hv=n._h;loc.autor=n.autor;return;}
+      if(i>=0)DB.ensaios[i]=n;else DB.ensaios.push(n);mudou=true;
+      if(tela.arg===o.id){abertoMudou=true;if(loc&&o.alteradoPor&&o.alteradoPor!==j.quem)toast("Atualizado por "+o.alteradoPor);}
+    });
+    try{localStorage.setItem(CHAVE,JSON.stringify(DB));}catch(e){}
+    const digitando=document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if(tela.nome==="lista"||(abertoMudou&&!digitando)||(tela.nome==="lista"&&mudou))render();
+    if(avisar)toast("Sincronizado");
+  }catch(err){if(avisar)toast("Sem internet ou sem resposta do Google");}
+  finally{sincronizando=false;if(syncDeNovo){syncDeNovo=false;agendarSync();}}
+}
+function blocoSync(){
+  const c=envioCfg();if(!c.url)return "";
+  const q=DB.syncQuando?new Date(DB.syncQuando):null,pend=DB.ensaios.filter(e=>compartilhavel(e)&&hashE(e)!==e._h).length;
+  const txt=DB.syncErro?`<b style="color:var(--bad,#b42318)">Não sincronizou:</b> ${esc(DB.syncErro)}`
+    :!c.chave?"Os ensaios são compartilhados entre os celulares. Toque em Sincronizar e digite a sua senha."
+    :`Compartilhado com todos${q?` · sincronizado às ${String(q.getHours()).padStart(2,"0")}:${String(q.getMinutes()).padStart(2,"0")}`:""}${pend?` · ${pend} ensaio(s) para subir`:""}`;
+  return `<div class="card" style="flex-direction:row;align-items:center;gap:8px;padding:10px 12px"><span class="note grow">${txt}</span><button class="btn small" type="button" id="syncAgora">Sincronizar</button></div>`;
+}
+setInterval(()=>{if(document.visibilityState==="visible"&&navigator.onLine!==false)sincronizar(false);},20000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")sincronizar(false);});
+window.addEventListener("online",()=>sincronizar(false));
+setTimeout(()=>sincronizar(false),800);
 let reenviarTodos=false;
 function telaExport(){
   $("#titulo").textContent="Exportar para o PC";
