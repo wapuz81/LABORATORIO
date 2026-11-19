@@ -328,6 +328,17 @@ function render(){
 // último registro de cada ensaio no Resumo (base de novembro: "2611 - Resumo Ensaios Trincheira R1", até outubro).
 // Imprimação (EAI) e pintura (RR-1C) têm numeração separada, como no Resumo. A aba NUMERACAO da planilha PARAMETROS DE PROJETO, se existir, substitui.
 const BASE_REG={densidade:51,benkelman:46,concreto:134,"taxa|EAI":6,"taxa|RR-1C":12,betume:14,cimento:0};
+// caixa do registro com a previsão do próximo número da sequência
+function dicaReg(e){const p=proxRegistro(e.tipo,e.material,e.id),v=String(e.registro||"").trim();
+  if(!p)return "";
+  const usado=v&&DB.ensaios.some(x=>x.id!==e.id&&!x.exemplo&&x.tipo===e.tipo&&chaveReg(x.tipo,x.material)===chaveReg(e.tipo,e.material)&&String(x.registro).trim()===v);
+  if(usado)return `<span style="color:var(--bad,#b42318)">Esse número já foi usado neste celular. Próximo da sequência: <b>${p}</b></span>`;
+  if(v&&v!==p&&e.status==="rascunho")return `Próximo da sequência: <b>${p}</b> (você digitou ${esc(v)})`;
+  return `Próximo da sequência: <b>${p}</b>`;}
+function campoReg(e,rot){const p=proxRegistro(e.tipo,e.material,e.id);
+  return `<label class="f">${rot}<input id="c_registro" inputmode="numeric" value="${esc(e.registro)}" placeholder="${p?"próximo: "+p:""}"><span class="u" id="c_regDica">${dicaReg(e)}</span></label>`;}
+document.addEventListener("input",ev=>{if(ev.target&&ev.target.id==="c_registro"){const e=DB.ensaios.find(x=>x.id===tela.arg);const d=document.getElementById("c_regDica");if(e&&d){e.registro=ev.target.value;d.innerHTML=dicaReg(e);}}});
+document.addEventListener("change",ev=>{if(ev.target&&ev.target.id==="c_material"){const e=DB.ensaios.find(x=>x.id===tela.arg);const d=document.getElementById("c_regDica");if(e&&d)setTimeout(()=>{d.innerHTML=dicaReg(e);},0);}});
 function chaveReg(tipo,sub){return tipo==="taxa"?"taxa|"+(sub==="RR-1C"?"RR-1C":"EAI"):tipo;}
 function proxRegistro(tipo,sub,semId){
   const k=chaveReg(tipo,sub),base=Object.assign({},BASE_REG,DB.cad.cfg.baseReg||{});
@@ -467,7 +478,7 @@ function cabecalhoComum(e){
   const taxa=e.tipo==="taxa";
   return `
     <div class="grid g3">
-      ${campo("c_registro","Registro (R)",e.registro,'inputmode="numeric"')}
+      ${campoReg(e,"Registro (R)")}
       <label class="f">Data<input id="c_data" type="date" value="${esc(e.data)}"></label>
       <label class="f full">Rua<select id="c_rua">${opts(DB.cad.ruas.map(r=>r.nome),e.rua,"Escolha a rua")}</select></label>
       ${segCampo(e,"Segmento")}
@@ -709,7 +720,7 @@ function telaConc(id){
   $("#app").innerHTML=`
     <h2>Identificação</h2>
     <section class="card"><div class="grid g3">
-      ${campo("c_registro","Série nº",e.registro,'inputmode="numeric"')}
+      ${campoReg(e,"Série nº")}
       <label class="f">Data da moldagem<input id="c_data" type="date" value="${esc(e.data)}"></label>
       ${campo("c_local","Local (Resumo)",e.local,'placeholder="Trincheira Norte" list="dl_local"')}<datalist id="dl_local">${LOCAIS.map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
       <label class="f full">Rua ou local<select id="c_rua">${opts(LOCAIS.concat(DB.cad.ruas.map(r=>r.nome)),e.rua,"Escolha (opcional)")}</select></label>
@@ -939,7 +950,7 @@ function telaBetume(id){
   $("#app").innerHTML=`
     <h2>Identificação</h2>
     <section class="card"><div class="grid g3">
-      ${campo("c_registro","Registro (R)",e.registro,'inputmode="numeric"')}
+      ${campoReg(e,"Registro (R)")}
       <label class="f">Data<input id="c_data" type="date" value="${esc(e.data)}"></label>
       <label class="f full">Rua<select id="c_rua">${opts(DB.cad.ruas.map(r=>r.nome),e.rua,"Escolha a rua")}</select></label>
       ${segCampo(e,"Estaca(s)")}
