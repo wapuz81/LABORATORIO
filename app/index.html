@@ -191,7 +191,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "44 (23/11)";
+const VERSAO_APP = "45 (23/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -401,7 +401,7 @@ function novo(tipo){
     const t=DB.cad.tracos.find(x=>x.nome===ult.traco)||DB.cad.tracos[0]||{};
     e=Object.assign(base,{local:ult.local||"Trincheira Norte",estrutura:ESTRUTURAS.includes(ult.estrutura)?ult.estrutura:"",elemento:"",lado:ult.lado||"",traco:t.nome||"",
       concreteira:t.concreteira||"",fck:fmtIn(t.fck),cimento:t.cimento||"",slumpEsp:fmtIn(t.slump),tolSlump:fmtIn(t.tolSlump),lancamento:ult.lancamento||"Convencional",
-      ...Object.fromEntries(DOSAGEM.map(([k])=>[k,t[k]||""])),
+      ...Object.fromEntries(DOSAGEM.map(([k])=>[k,k==="dAgua"?"":(t[k]||"")])),
       slump:"",cps:"4",idades:"7/28",nf:"",placa:"",volume:"",acumulado:"",hDosagem:"",hChegada:"",hInicio:"",hTermino:"",moldador:ult.moldador||""});
   } else if(tipo==="taxa"){
     const em=EMULSOES.includes(ult.material)?ult.material:"EAI";
@@ -877,7 +877,7 @@ function telaConc(id){
     </div></section>
     <h2>Dosagem por m³</h2>
     <section class="card"><div class="grid g3">
-      ${DOSAGEM.map(([k,rot])=>campo("c_"+k,rot,e[k]||"")).join("")}
+      ${DOSAGEM.map(([k,rot])=>campo("c_"+k,k==="dAgua"?"Água (kg) <span class=\"u\">(previsão em cinza)</span>":rot,e[k]||"",k==="dAgua"?"full":"")).join("")}
     </div><p class="note">Vem do traço escolhido. Confira com a nota fiscal e corrija aqui se for diferente.</p></section>
     <h2>Caminhão</h2>
     <section class="card"><div class="grid g3">
@@ -895,7 +895,7 @@ function telaConc(id){
   const campos=["registro","data","local","rua","estrutura","elemTipo","estDe","estAte","elemCompl","traco","concreteira","fck","cimento","slumpEsp","tolSlump","lancamento",...DOSAGEM.map(([k])=>k),"slump","cps","idades","nf","placa","volume","acumulado","hDosagem","hChegada","hInicio","hTermino","moldador"];
   campos.forEach(k=>{const el=$("#c_"+k);if(!el)return;el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{e[k]=el.value;tocou(e);
     if(k==="traco"){const t=DB.cad.tracos.find(x=>x.nome===el.value);if(t){e.concreteira=t.concreteira;e.fck=fmtIn(t.fck);e.cimento=t.cimento;e.slumpEsp=fmtIn(t.slump);e.tolSlump=fmtIn(t.tolSlump);
-      DOSAGEM.forEach(([x])=>e[x]=t[x]||"");
+      DOSAGEM.forEach(([x])=>{if(x!=="dAgua")e[x]=t[x]||"";});
       ["concreteira","fck","cimento","slumpEsp","tolSlump",...DOSAGEM.map(([x])=>x)].forEach(x=>$("#c_"+x).value=e[x]);}}
     if(k==="registro")$("#titulo").textContent=tit();
     if(k==="estrutura"){const l=elementosDe(e);if(e.elemTipo&&!l.includes(e.elemTipo)){e.elemTipo="";e.elemento="";}if(!e.elemTipo&&l.length===1)e.elemTipo=l[0];
@@ -907,7 +907,13 @@ function telaConc(id){
   ligarRodape(e);atualizarConc(e);
   setBar([{t:"Concluir",cls:"primary",f:()=>concluir(e,"Série guardada no aparelho")}]);
 }
+// previsão da água (cinza na caixa): a do traço e a máxima pelo a/c da OAE
+function previsaoAgua(e){
+  const t=DB.cad.tracos.find(x=>x.nome===e.traco)||{},r=regraOAE(e),cim=ultNum(e.dCimento),ag=ultNum(t.dAgua);
+  const p=[];if(ok(ag))p.push("traço "+String(t.dAgua).trim());if(r&&ok(cim))p.push("máx. "+fmtIn(Math.floor(r.ac*cim*10)/10));
+  return p.length?p.join(" · "):"";}
 function atualizarConc(e){
+  const pa=$("#c_dAgua");if(pa)pa.placeholder=previsaoAgua(e);
   const c=calcConc(e);
   const sChip=c.slumpOk==null?'<span class="chip neutral">–</span>':`<span class="chip ${c.slumpOk?"ok":"bad"}">${c.slumpOk?"OK":"FORA"}</span>`;
   const tChip=c.tempoOk==null?'<span class="chip neutral">–</span>':`<span class="chip ${c.tempoOk?"ok":"warn"}">${c.tempoOk?"OK":"> 2h30"}</span>`;
