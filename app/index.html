@@ -183,7 +183,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "41 (23/11)";
+const VERSAO_APP = "42 (23/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -478,7 +478,7 @@ function situacao(e){
   } else if(e.tipo==="concreto"){
     const c=calcConc(e);
     if(!ok(num(e.slump))) return {cls:"neutral",t:"sem slump"};
-    return c.slumpOk===false?{cls:"bad",t:"slump fora"}:c.tempoOk===false?{cls:"warn",t:"tempo > 2h30"}:{cls:"ok",t:"slump ok"};
+    return c.slumpOk===false?{cls:"bad",t:"slump fora"}:c.fckOk===false?{cls:"bad",t:"fck abaixo da OAE"}:c.acOk===false?{cls:"warn",t:"a/c acima da OAE"}:c.tempoOk===false?{cls:"warn",t:"tempo > 2h30"}:{cls:"ok",t:"slump ok"};
   } else if(e.tipo==="taxa"){
     const cs=(e.bandejas||[]).map(b=>calcBandeja(e,b)).filter(c=>ok(c.taxa));
     if(!cs.length) return {cls:"neutral",t:"sem leitura"};
@@ -806,10 +806,23 @@ function atualizarBenk(e){
 
 /* ================= Moldagem de concreto ================= */
 function minutos(h){const m=String(h||"").match(/^(\d{1,2}):(\d{2})/);return m?+m[1]*60+ +m[2]:NaN;}
+// Critérios estruturais do projeto de OAE (nota 3.1): fck mínimo, a/c máximo e consumo mínimo de cimento por elemento
+function regraOAE(e){
+  const el=String(e.elemTipo||e.estrutura||"").toUpperCase().replace(/[ÉE]/g,"E");
+  if(/ESTACA/.test(el))return {grupo:"Estaca hélice contínua",fck:30,ac:0.60,cons:400,slump:[22,26]};
+  if(/LAJE|LONGARINA|TRANSVERSINA/.test(el))return {grupo:"Superestrutura",fck:35,ac:0.50,cons:320};
+  if(/VIGA|PILAR|BLOCO|BARREIRA|CORTINA/.test(el))return {grupo:"Meso/infraestrutura",fck:30,ac:0.55,cons:320};
+  return null;}
+// último número do campo (ex.: água "(190L) 169,58" → 169,58)
+function ultNum(v){const m=String(v==null?"":v).match(/-?\d+(?:[.,]\d+)?/g);return m?num(m[m.length-1]):NaN;}
 function calcConc(e){
-  const s=num(e.slump),esp=num(e.slumpEsp),tol=num(e.tolSlump);
+  let s=num(e.slump),esp=num(e.slumpEsp),tol=num(e.tolSlump);
+  const r=regraOAE(e);
+  if(r&&r.slump){esp=(r.slump[0]+r.slump[1])/2;tol=(r.slump[1]-r.slump[0])/2;}
   const t0=minutos(e.hDosagem),t1=minutos(e.hTermino);let tempo=t1-t0;if(ok(tempo)&&tempo<0)tempo+=1440;
-  return {slumpOk:ok(s)&&ok(esp)&&ok(tol)?(s>=esp-tol-1e-9&&s<=esp+tol+1e-9):null,tempo,tempoOk:ok(tempo)?tempo<=150:null};
+  const cim=ultNum(e.dCimento),ag=ultNum(e.dAgua),ac=ok(cim)&&ok(ag)&&cim>0?Math.round(ag/cim*1000)/1000:NaN,fck=num(e.fck);
+  return {slumpOk:ok(s)&&ok(esp)&&ok(tol)?(s>=esp-tol-1e-9&&s<=esp+tol+1e-9):null,tempo,tempoOk:ok(tempo)?tempo<=150:null,
+    regra:r,ac,acOk:r&&ok(ac)?ac<=r.ac+1e-9:null,cim,consOk:r&&ok(cim)?cim>r.cons:null,fckOk:r&&ok(fck)?fck>=r.fck:null};
 }
 function agora(){const d=new Date();return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");}
 // traço na lista: fck primeiro, depois o tipo de estrutura e por último a concreteira (o valor gravado continua o nome do traço)
@@ -881,10 +894,15 @@ function atualizarConc(e){
   const c=calcConc(e);
   const sChip=c.slumpOk==null?'<span class="chip neutral">–</span>':`<span class="chip ${c.slumpOk?"ok":"bad"}">${c.slumpOk?"OK":"FORA"}</span>`;
   const tChip=c.tempoOk==null?'<span class="chip neutral">–</span>':`<span class="chip ${c.tempoOk?"ok":"warn"}">${c.tempoOk?"OK":"> 2h30"}</span>`;
-  const esp=num(e.slumpEsp),tol=num(e.tolSlump);
-  $("#concCalc").innerHTML=`<div>Slump aceito<b>${ok(esp)&&ok(tol)?fmt(esp-tol,0)+" a "+fmt(esp+tol,0)+" cm":"–"}</b></div>
+  const r=c.regra,esp=r&&r.slump?null:num(e.slumpEsp),tol=num(e.tolSlump);
+  const chip=(v,okT,badT)=>v==null?'<span class="chip neutral">–</span>':`<span class="chip ${v?"ok":"bad"}">${v?okT:badT}</span>`;
+  $("#concCalc").innerHTML=`<div>Slump aceito<b>${r&&r.slump?r.slump[0]+" a "+r.slump[1]+" cm (OAE)":ok(esp)&&ok(tol)?fmt(esp-tol,0)+" a "+fmt(esp+tol,0)+" cm":"–"}</b></div>
     <div>Slump medido<b>${ok(num(e.slump))?fmt(num(e.slump),1)+" cm":"–"} ${sChip}</b></div>
-    <div>Dosagem → término<b>${ok(c.tempo)?Math.floor(c.tempo/60)+"h"+String(c.tempo%60).padStart(2,"0"):"–"} ${tChip}</b></div>`;
+    <div>Dosagem → término<b>${ok(c.tempo)?Math.floor(c.tempo/60)+"h"+String(c.tempo%60).padStart(2,"0"):"–"} ${tChip}</b></div>
+    <div>a/c<b>${ok(c.ac)?fmt(c.ac,2):"–"}${r?` <span style="font-size:12px;font-weight:400">(máx. ${fmt(r.ac,2)})</span>`:""} ${chip(c.acOk,"OK","ACIMA")}</b></div>
+    ${r?`<div>Consumo de cimento<b>${ok(c.cim)?fmt(c.cim,0)+" kg/m³":"–"} <span style="font-size:12px;font-weight:400">(&gt; ${r.cons})</span> ${chip(c.consOk,"OK","VERIF.")}</b></div>
+    <div>fck do traço<b>${ok(num(e.fck))?fmt(num(e.fck),0)+" MPa":"–"} <span style="font-size:12px;font-weight:400">(mín. ${r.fck})</span> ${chip(c.fckOk,"OK","ABAIXO")}</b></div>
+    <p class="note" style="grid-column:1/-1">Critérios do projeto de OAE para ${esc(r.grupo.toLowerCase())}. a/c = água ÷ cimento da dosagem por m³.</p>`:""}`;
 }
 
 /* ================= Taxa de aplicação (imprimação / pintura) ================= */
