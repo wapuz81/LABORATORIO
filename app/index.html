@@ -137,7 +137,7 @@ const ELEMENTOS = ["VIGA COROA","VIGA","ESTACA","PRÉ-LAJE","LAJE","PILAR","BLOC
 // texto do elemento no Resumo: "VIGA COROA E297 A 312" (o lado vai na coluna própria)
 function montarElemento(e){if(!e.elemTipo)return e.elemento||"";const de=String(e.estDe||"").trim(),ate=String(e.estAte||"").trim(),c=String(e.elemCompl||"").trim();
   return [e.elemTipo,c,de?("E"+de+(ate&&ate!==de?" A "+ate:"")):""].filter(Boolean).join(" ");}
-const ESTRUTURAS = ["VIGA","ESTACA","LAJE","PRE LAJE","PILAR","BLOCO","CORTINA","MEIO-FIO","CALÇADA","OUTRO"];
+const ESTRUTURAS = ["SUPERESTRUTURA","MESOESTRUTURA","INFRAESTRUTURA","ESTACA HÉLICE CONTÍNUA","OUTROS (fora da OAE)"];
 // Deflexão admissível (0,01 mm) por Número N × camada — mesma tabela da fórmula da aba "Viga. Benk"
 const TAB_ADM = {
   1e6:[200,200,150,120,80], 2e6:[180,180,140,100,70], 5e6:[175,175,135,90,60],
@@ -183,7 +183,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "42 (23/11)";
+const VERSAO_APP = "43 (23/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -391,7 +391,7 @@ function novo(tipo){
       furos:[novoFuro()]});
   } else if(tipo==="concreto"){
     const t=DB.cad.tracos.find(x=>x.nome===ult.traco)||DB.cad.tracos[0]||{};
-    e=Object.assign(base,{local:ult.local||"Trincheira Norte",estrutura:ult.estrutura||"VIGA",elemento:"",lado:ult.lado||"",traco:t.nome||"",
+    e=Object.assign(base,{local:ult.local||"Trincheira Norte",estrutura:ESTRUTURAS.includes(ult.estrutura)?ult.estrutura:"",elemento:"",lado:ult.lado||"",traco:t.nome||"",
       concreteira:t.concreteira||"",fck:fmtIn(t.fck),cimento:t.cimento||"",slumpEsp:fmtIn(t.slump),tolSlump:fmtIn(t.tolSlump),lancamento:ult.lancamento||"Convencional",
       ...Object.fromEntries(DOSAGEM.map(([k])=>[k,t[k]||""])),
       slump:"",cps:"4",idades:"7/28",nf:"",placa:"",volume:"",acumulado:"",hDosagem:"",hChegada:"",hInicio:"",hTermino:"",moldador:ult.moldador||""});
@@ -808,6 +808,13 @@ function atualizarBenk(e){
 function minutos(h){const m=String(h||"").match(/^(\d{1,2}):(\d{2})/);return m?+m[1]*60+ +m[2]:NaN;}
 // Critérios estruturais do projeto de OAE (nota 3.1): fck mínimo, a/c máximo e consumo mínimo de cimento por elemento
 function regraOAE(e){
+  const es=String(e.estrutura||"").toUpperCase();
+  if(/^ESTACA H/.test(es))return {grupo:"Estaca hélice contínua",fck:30,ac:0.60,cons:400,slump:[22,26]};
+  if(/^SUPER/.test(es))return {grupo:"Superestrutura",fck:35,ac:0.50,cons:320};
+  if(/^MESO/.test(es))return {grupo:"Mesoestrutura",fck:30,ac:0.55,cons:320};
+  if(/^INFRA/.test(es))return {grupo:"Infraestrutura",fck:30,ac:0.55,cons:320};
+  if(/^OUTROS/.test(es))return null;
+  // ensaios antigos (estrutura VIGA, LAJE…): pelo elemento
   const el=String(e.elemTipo||e.estrutura||"").toUpperCase().replace(/[ÉE]/g,"E");
   if(/ESTACA/.test(el))return {grupo:"Estaca hélice contínua",fck:30,ac:0.60,cons:400,slump:[22,26]};
   if(/LAJE|LONGARINA|TRANSVERSINA/.test(el))return {grupo:"Superestrutura",fck:35,ac:0.50,cons:320};
@@ -842,7 +849,7 @@ function telaConc(id){
       <label class="f">Data da moldagem<input id="c_data" type="date" value="${esc(e.data)}"></label>
       <label class="f">Local (Resumo)<select id="c_local">${opts(LOCAIS,e.local,"Escolha")}</select></label>
       <label class="f full">Rua ou local<select id="c_rua">${opts(LOCAIS.concat(DB.cad.ruas.map(r=>r.nome)),e.rua,"Escolha (opcional)")}</select></label>
-      <label class="f">Estrutura<select id="c_estrutura">${opts(ESTRUTURAS,e.estrutura,"Escolha")}</select></label>
+      <label class="f full">Estrutura<select id="c_estrutura">${opts(ESTRUTURAS,e.estrutura,"Escolha")}</select></label>
       <label class="f full">Elemento concretado<select id="c_elemTipo">${opts(ELEMENTOS,e.elemTipo||"",e.elemTipo||!e.elemento?"Escolha":"Escolha (hoje: "+e.elemento+")")}</select></label>
       ${campoNum("c_estDe","Estaca de",e.estDe,"")}
       ${campoNum("c_estAte","Estaca até",e.estAte,"")}
