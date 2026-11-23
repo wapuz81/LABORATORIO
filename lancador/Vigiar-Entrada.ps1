@@ -29,6 +29,8 @@ try {
   foreach ($n in "fichasDensidade", "fichasBenkelman", "fichasTaxa", "fichasBetume") { $m = $cfg.$n; if ($m) { foreach ($p in $m.PSObject.Properties) { $planilhas += $p.Value } } }
   if ($cfg.fichaConcreto) { $planilhas += $cfg.fichaConcreto }
   if ($cfg.fichaDensidade) { $planilhas += $cfg.fichaDensidade }
+  if ($cfg.fichaBenkelman) { $planilhas += $cfg.fichaBenkelman }
+  if ($cfg.fichaBetume) { $planilhas += $cfg.fichaBetume }
   $marca = Join-Path $entrada "aguardando.tmp"
   foreach ($p in ($planilhas | Select-Object -Unique)) {
     if (-not (Test-Path -LiteralPath $p)) { continue }

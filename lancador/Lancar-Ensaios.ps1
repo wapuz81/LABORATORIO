@@ -530,12 +530,14 @@ try {
         Log "OK  $rot -> aba '$nome' + $($furos.Count) linha(s) no Resumo (Mat. Granular)"
       }
       elseif ($e.tipo -eq "benkelman") {
-        $orig = MapaCfg "fichasBenkelman" $e.material
-        if (-not $orig) { throw "sem ficha de Benkelman configurada para o material '$($e.material)' (config.json, fichasBenkelman)" }
+        # desde 23/11: uma planilha só (config "fichaBenkelman"); "fichasBenkelman" por material fica como reserva
+        $orig = if ($cfg.fichaBenkelman) { $cfg.fichaBenkelman } else { MapaCfg "fichasBenkelman" $e.material }
+        if (-not $orig) { throw "sem ficha de Benkelman configurada (config.json, fichaBenkelman)" }
         foreach ($lado in "LE","EIXO","LD") { if (@($e.leituras.$lado).Count -gt 16) { throw "a ficha tem 16 linhas e o lado $lado tem mais leituras" } }
         $wb = Abrir (Destino $orig)
-        $nome = NomeAba $wb ("VIGA-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
-        if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
+        # aba = número da série, igual ao Registro da aba Viga. Benk do Resumo
+        $nome = NomeAba $wb ("$($e.registro)".Trim())
+        if (-not $nome) { throw "a planilha da viga já tem a aba '$("$($e.registro)".Trim())' (série repetida ou lançada à mão?)" }
         $modelo = AbaModelo $wb
         $ws = CopiaAba $wb $modelo
         $ws.Name = $nome
@@ -754,13 +756,20 @@ try {
         # ficha "TEOR DE BETUME" (uma por faixa): cabeçalho H2/H3/C3/C4/H4/C5/H5, pesagens na linha 8, retidos na coluna C das linhas 15–27
         $avisoFicha = ""
         $nome = $null
-        $orig = MapaCfg "fichasBetume" $e.faixa
+        # desde 23/11: uma planilha só (config "fichaBetume") com uma aba "MODELO <faixa>" por faixa; "fichasBetume" por faixa fica como reserva
+        $orig = if ($cfg.fichaBetume) { $cfg.fichaBetume } else { MapaCfg "fichasBetume" $e.faixa }
         if (-not $orig) { $avisoFicha = "; sem ficha configurada para a faixa '$($e.faixa)' (config.json, fichasBetume): lancei só no Resumo" }
         else {
           $wb = Abrir (Destino $orig)
-          $nome = NomeAba $wb ("BETUME-R$($e.registro)-FAIXA $($e.faixa)-$("$($e.rua)".ToUpper())")
-          if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
-          $modelo = AbaModelo $wb
+          # aba = número da série, igual ao Registro da aba CBUQ Gl Betume do Resumo
+          $nome = NomeAba $wb ("$($e.registro)".Trim())
+          if (-not $nome) { throw "a planilha de betume já tem a aba '$("$($e.registro)".Trim())' (série repetida ou lançada à mão?)" }
+          $modelo = $null
+          foreach ($sh in $wb.Worksheets) { if ($sh.Name -eq "MODELO $($e.faixa)") { $modelo = $sh } }
+          if (-not $modelo) {
+            if ($cfg.fichaBetume) { throw "a planilha de betume não tem a aba 'MODELO $($e.faixa)' (faixa do ensaio)" }
+            $modelo = AbaModelo $wb
+          }
           $ws = CopiaAba $wb $modelo
           $ws.Name = $nome
           try {
