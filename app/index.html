@@ -133,7 +133,15 @@ const FAIXAS = {
   C:{"1":[1,1],"34":[0.9,1],"38":[0.56,0.8],"4":[0.35,0.65],"10":[0.22,0.46],"40":[0.08,0.24],"200":[0.02,0.08]}
 };
 const CAMADAS_CBUQ = ["Rolamento","Binder","Reperfilagem"];
-const ELEMENTOS = ["VIGA COROA","VIGA","ESTACA","PRÉ-LAJE","LAJE","PILAR","BLOCO","BARREIRA","CORTINA","MEIO-FIO","CALÇADA","OUTRO"];
+// elementos de cada estrutura (o campo Elemento só mostra os da estrutura escolhida)
+const ELEM_POR_ESTR = {
+  "SUPERESTRUTURA":["LAJE","PRÉ-LAJE","LONGARINA","TRANSVERSINA","PLACA DE APROXIMAÇÃO"],
+  "MESOESTRUTURA":["VIGA COROA","VIGA","PILAR","TRAVESSA","CORTINA","BARREIRA"],
+  "INFRAESTRUTURA":["BLOCO","VIGA COROA","SAPATA"],
+  "ESTACA HÉLICE CONTÍNUA":["ESTACA"],
+  "OUTROS (fora da OAE)":["MEIO-FIO","CALÇADA","VIGUETA","CONCRETO MAGRO","OUTRO"]};
+const ELEMENTOS = [...new Set(Object.values(ELEM_POR_ESTR).flat())];
+function elementosDe(e){return ELEM_POR_ESTR[e.estrutura]||ELEMENTOS;}
 // texto do elemento no Resumo: "VIGA COROA E297 A 312" (o lado vai na coluna própria)
 function montarElemento(e){if(!e.elemTipo)return e.elemento||"";const de=String(e.estDe||"").trim(),ate=String(e.estAte||"").trim(),c=String(e.elemCompl||"").trim();
   return [e.elemTipo,c,de?("E"+de+(ate&&ate!==de?" A "+ate:"")):""].filter(Boolean).join(" ");}
@@ -183,7 +191,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "43 (23/11)";
+const VERSAO_APP = "44 (23/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -850,7 +858,7 @@ function telaConc(id){
       <label class="f">Local (Resumo)<select id="c_local">${opts(LOCAIS,e.local,"Escolha")}</select></label>
       <label class="f full">Rua ou local<select id="c_rua">${opts(LOCAIS.concat(DB.cad.ruas.map(r=>r.nome)),e.rua,"Escolha (opcional)")}</select></label>
       <label class="f full">Estrutura<select id="c_estrutura">${opts(ESTRUTURAS,e.estrutura,"Escolha")}</select></label>
-      <label class="f full">Elemento concretado<select id="c_elemTipo">${opts(ELEMENTOS,e.elemTipo||"",e.elemTipo||!e.elemento?"Escolha":"Escolha (hoje: "+e.elemento+")")}</select></label>
+      <label class="f full">Elemento concretado<select id="c_elemTipo">${opts(elementosDe(e),e.elemTipo||"",e.elemTipo||!e.elemento?"Escolha":"Escolha (hoje: "+e.elemento+")")}</select></label>
       ${campoNum("c_estDe","Estaca de",e.estDe,"")}
       ${campoNum("c_estAte","Estaca até",e.estAte,"")}
       ${campo("c_elemCompl","Complemento (opcional)",e.elemCompl,'placeholder="V11, tipo 3…"')}
@@ -890,7 +898,9 @@ function telaConc(id){
       DOSAGEM.forEach(([x])=>e[x]=t[x]||"");
       ["concreteira","fck","cimento","slumpEsp","tolSlump",...DOSAGEM.map(([x])=>x)].forEach(x=>$("#c_"+x).value=e[x]);}}
     if(k==="registro")$("#titulo").textContent=tit();
-    if(["elemTipo","estDe","estAte","elemCompl"].includes(k)){e.elemento=montarElemento(e);$("#c_elemPrev").innerHTML=e.elemento?"No Resumo: <b>"+esc(e.elemento)+"</b>":"";}
+    if(k==="estrutura"){const l=elementosDe(e);if(e.elemTipo&&!l.includes(e.elemTipo)){e.elemTipo="";e.elemento="";}if(!e.elemTipo&&l.length===1)e.elemTipo=l[0];
+      $("#c_elemTipo").innerHTML=opts(l,e.elemTipo||"","Escolha");}
+    if(["estrutura","elemTipo","estDe","estAte","elemCompl"].includes(k)){e.elemento=montarElemento(e);$("#c_elemPrev").innerHTML=e.elemento?"No Resumo: <b>"+esc(e.elemento)+"</b>":"";}
     salvar();atualizarConc(e);});});
   document.querySelectorAll("[data-agora]").forEach(b=>b.onclick=()=>{const k=b.dataset.agora;e[k]=agora();$("#c_"+k).value=e[k];tocou(e);salvar();atualizarConc(e);});
   document.querySelectorAll("[data-lado]").forEach(b=>b.onclick=()=>{e.lado=b.dataset.lado;tocou(e);salvar();document.querySelectorAll("[data-lado]").forEach(x=>x.setAttribute("aria-pressed",x===b));});
