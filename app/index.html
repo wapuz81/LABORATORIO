@@ -179,7 +179,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "37 (19/11)";
+const VERSAO_APP = "38 (23/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -792,6 +792,12 @@ function calcConc(e){
   return {slumpOk:ok(s)&&ok(esp)&&ok(tol)?(s>=esp-tol-1e-9&&s<=esp+tol+1e-9):null,tempo,tempoOk:ok(tempo)?tempo<=150:null};
 }
 function agora(){const d=new Date();return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");}
+// traço na lista: fck primeiro, depois o tipo de estrutura e por último a concreteira (o valor gravado continua o nome do traço)
+function tipoTraco(t){const m=/\(([^)]*)\)/.exec(t.nome||"");if(m)return m[1];const u=String(t.uso||"").trim();return u&&!/^fck/i.test(u)?u:"";}
+function rotTraco(t){return ["fck "+(t.fck!==""&&t.fck!=null?fmtIn(t.fck):"?"),tipoTraco(t),t.concreteira].filter(Boolean).join(" · ");}
+function optsTraco(sel){
+  const ts=DB.cad.tracos.slice().sort((a,b)=>(num(a.fck)||0)-(num(b.fck)||0)||tipoTraco(a).localeCompare(tipoTraco(b))||String(a.concreteira).localeCompare(String(b.concreteira)));
+  return `<option value="">Escolha</option>`+ts.map(t=>`<option value="${esc(t.nome)}"${t.nome===sel?" selected":""}>${esc(rotTraco(t))}</option>`).join("")+(sel&&!ts.some(t=>t.nome===sel)?`<option selected>${esc(sel)}</option>`:"");}
 function telaConc(id){
   const e=DB.ensaios.find(x=>x.id===id);if(!e)return ir("lista");
   const tit=()=>`Concreto · Série ${e.registro||"?"}`;$("#titulo").textContent=tit();
@@ -809,13 +815,13 @@ function telaConc(id){
     </div></section>
     <h2>Concreto</h2>
     <section class="card"><div class="grid g3">
-      <label class="f full">Traço<select id="c_traco">${opts(DB.cad.tracos.map(t=>t.nome),e.traco,"Escolha")}</select></label>
-      ${campo("c_concreteira","Concreteira",e.concreteira)}
+      <label class="f full">Traço <span class="u">(fck · estrutura · concreteira)</span><select id="c_traco">${optsTraco(e.traco)}</select></label>
       ${campoNum("c_fck","fck",e.fck,"MPa")}
       ${campo("c_cimento","Cimento",e.cimento)}
       ${campoNum("c_slumpEsp","Slump especificado",e.slumpEsp,"cm")}
       ${campoNum("c_tolSlump","Tolerância",e.tolSlump,"± cm")}
       <label class="f">Lançamento<select id="c_lancamento">${opts(["Convencional","Bombeado"],e.lancamento||"Convencional","Escolha")}</select></label>
+      ${campo("c_concreteira","Concreteira",e.concreteira)}
     </div></section>
     <h2>Dosagem por m³</h2>
     <section class="card"><div class="grid g3">
@@ -1258,7 +1264,7 @@ function aplicarParametros(P){
   const DOS={dmax:"Diâm. máx. agregado (mm)",aditivo:"Aditivo",dCimento:"Dosagem cimento (kg)",dAreia:"Dosagem areia (kg)",dPedra0:"Dosagem pedra 0 (kg)",
     dPedra1:"Dosagem pedra 1 (kg)",dAgua:"Dosagem água (kg)",dAditivo:"Dosagem aditivo (kg)"};
   const tr=lin("CONCRETO").filter(r=>tx(r["Nome no app"])).map(r=>{const sl=n(r["Slump (mm)"]),tl=n(r["Tolerância slump (mm)"]);
-    const t={nome:tx(r["Nome no app"]),concreteira:tx(r.Central),fck:nz(r["fck (MPa)"]),cimento:tx(r.Cimento),slump:ok(sl)?sl/10:"",tolSlump:ok(tl)?tl/10:""};
+    const t={nome:tx(r["Nome no app"]),uso:tx(r.Uso),concreteira:tx(r.Central),fck:nz(r["fck (MPa)"]),cimento:tx(r.Cimento),slump:ok(sl)?sl/10:"",tolSlump:ok(tl)?tl/10:""};
     Object.keys(DOS).forEach(k=>t[k]=tx(r[DOS[k]]));return t;});
   if(tr.length)cad.tracos=tr;
   lin("TAXAS").forEach(r=>{const l=tx(r.Ligante).toUpperCase(),v=n(r["Taxa projeto (L/m²)"]),t=n(r["Tolerância (±)"]);
