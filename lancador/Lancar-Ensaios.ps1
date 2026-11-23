@@ -446,13 +446,15 @@ try {
     try {
       if ($e.tipo -eq "densidade") {
         # ===== ficha =====
-        $orig = MapaCfg "fichasDensidade" $e.material
-        if (-not $orig) { throw "sem ficha de densidade configurada para o material '$($e.material)' (config.json, fichasDensidade)" }
+        # desde 23/11: uma planilha só para todos os materiais (config "fichaDensidade"); "fichasDensidade" por material fica como reserva
+        $orig = if ($cfg.fichaDensidade) { $cfg.fichaDensidade } else { MapaCfg "fichasDensidade" $e.material }
+        if (-not $orig) { throw "sem ficha de densidade configurada (config.json, fichaDensidade)" }
         $furos = @($e.furos | Where-Object { $null -ne $_.antes -or $null -ne $_.umidade })
         if ($furos.Count -gt 8) { throw "a ficha tem 8 linhas e o ensaio tem $($furos.Count) furos" }
         $wb = Abrir (Destino $orig)
-        $nome = NomeAba $wb ("IN SITU-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
-        if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
+        # aba = número da série, igual ao Registro do Resumo (série 52 -> aba "52"; furos 52.1, 52.2... nas linhas 10-17)
+        $nome = NomeAba $wb ("$($e.registro)".Trim())
+        if (-not $nome) { throw "a planilha de densidade já tem a aba '$("$($e.registro)".Trim())' (série repetida ou lançada à mão?)" }
         $modelo = AbaModelo $wb
         $ws = CopiaAba $wb $modelo
         $ws.Name = $nome
