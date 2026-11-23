@@ -1,0 +1,872 @@
+﻿# Lançador dos ensaios de campo
+# Lê os arquivos .json exportados pelo app "Ensaios de Campo", cria a aba de cada ensaio
+# na ficha certa (copiando a última aba da ficha como modelo) e acrescenta as linhas no Resumo.
+# Usa o próprio Excel (logos, gráficos e fórmulas das fichas são preservados).
+#
+# Modo "teste": trabalha em CÓPIAS dentro de pastaSaidaTeste\aammdd-hhmm\ e não toca nos originais.
+# Modo "gravar": antes de alterar, copia a versão anterior de cada arquivo para a subpasta ANTIGO.
+
+param([string]$Config = (Join-Path $PSScriptRoot "config.json"), [switch]$SemPausa)
+function Pausa { if (-not $SemPausa) { Read-Host "Enter para fechar" | Out-Null } }
+
+$ErrorActionPreference = "Stop"
+$cfg = Get-Content -Raw -Encoding UTF8 $Config | ConvertFrom-Json
+$agora = Get-Date
+$carimbo = $agora.ToString("yyMMdd-HHmm")
+$log = New-Object System.Collections.Generic.List[string]
+function Log($m) { Write-Host $m; $log.Add($m) }
+
+function Valor($obj, $nome) { if ($null -eq $obj) { return $null }; $p = $obj.PSObject.Properties[$nome]; if ($p) { return $p.Value } else { return $null } }
+function MapaCfg($nome, $chave) { $m = Valor $cfg $nome; return (Valor $m $chave) }
+
+# ---------- arquivos de entrada ----------
+$entrada = $cfg.pastaEntrada
+if (-not (Test-Path $entrada)) { throw "Pasta de entrada não encontrada: $entrada" }
+# o app envia pelo Android como "... .json.txt" (o Android não compartilha .json)
+$jsons = @(Get-ChildItem -Path $entrada -File | Where-Object { $_.Name -like "*.json" -or $_.Name -like "*.json.txt" } | Sort-Object Name)
+if (-not $jsons) { Log "Nenhum arquivo .json em $entrada. Nada a fazer."; Pausa; exit }
+
+$registroLanc = Join-Path $entrada "lancados.csv"
+$jaLancados = @{}
+if (Test-Path $registroLanc) { Import-Csv $registroLanc -Encoding UTF8 | ForEach-Object { $jaLancados[$_.id] = $_ } }
+
+$ensaios = @()
+$naFila = @{}
+# tipo + registro já usados (por qualquer celular): o mesmo número com outro id é registro repetido
+function ChaveReg($e) { $r = "$($e.registro)".Trim(); if (-not $r) { return $null }; return "$($e.tipo)|$r".ToLower() }
+$regUsado = @{}
+foreach ($l in $jaLancados.Values) { $k = ChaveReg $l; if ($k -and -not $regUsado.ContainsKey($k)) { $regUsado[$k] = "lançado em $($l.lancado) ($($l.arquivo))" } }
+$comErro = @{}      # arquivos .json com problema (ilegível, de outro app ou com algum ensaio que deu erro)
+foreach ($j in $jsons) {
+  try { $pac = Get-Content -Raw -Encoding UTF8 $j.FullName | ConvertFrom-Json }
+  catch { Log "ERRO arquivo ilegível (não é um .json válido): $($j.Name)"; $comErro[$j.Name] = $true; continue }
+  if ($pac.app -ne "ensaios-campo-trincheira") { Log "ERRO arquivo não é do app Ensaios de Campo: $($j.Name)"; $comErro[$j.Name] = $true; continue }
+  foreach ($e in $pac.ensaios) {
+    if ($jaLancados.ContainsKey($e.id)) { Log "Já lançado antes, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
+    # o mesmo ensaio pode vir em mais de um arquivo da mesma rodada (reenvio): lança só a primeira cópia
+    if ($naFila.ContainsKey($e.id)) { Log "Repetido em outro arquivo desta rodada, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
+    $k = ChaveReg $e
+    if ($k -and $regUsado.ContainsKey($k)) {
+      Log "ERRO registro repetido: $($e.tipo) R$($e.registro) ($($e.rua)) de $($j.Name) - esse número já foi $($regUsado[$k]). Troque o número no app e envie de novo."
+      $comErro[$j.Name] = $true; continue
+    }
+    if ($k) { $regUsado[$k] = "usado em $($j.Name), nesta mesma rodada" }
+    $naFila[$e.id] = $true
+    $e | Add-Member -NotePropertyName arquivo -NotePropertyValue $j.Name -Force
+    # nomes antigos do app (um nome por fornecedor) -> material = tipo + procedência
+    $antigo = @{ "Moledo Extrabel" = @("Moledo", "Extrabel Minérios"); "BGS Cotragon" = @("BGS", "Pedreira Cotragon"); "Brita 4A" = @("Bica Corrida", "Mineração Barigui") }
+    if ($e.material -and $antigo.ContainsKey("$($e.material)")) {
+      $par = $antigo["$($e.material)"]
+      $e | Add-Member -NotePropertyName material -NotePropertyValue $par[0] -Force
+      $e | Add-Member -NotePropertyName procedencia -NotePropertyValue $par[1] -Force
+    }
+    if ("$($e.procedencia)" -like "(*") { $e | Add-Member -NotePropertyName procedencia -NotePropertyValue "" -Force }
+    $ensaios += $e
+  }
+}
+$modo = if ($cfg.modo) { $cfg.modo.ToLower() } else { "teste" }
+$raiz = Split-Path $Config -Parent
+function MoveUnico($arq, $pasta) {
+  if (-not (Test-Path $pasta)) { New-Item -ItemType Directory $pasta | Out-Null }
+  $dest = Join-Path $pasta $arq.Name
+  if (Test-Path -LiteralPath $dest) { $dest = Join-Path $pasta ($arq.BaseName + " ($carimbo)" + $arq.Extension) }
+  Move-Item -LiteralPath $arq.FullName -Destination $dest
+}
+# no modo gravar a ENTRADA sempre termina vazia: sem erro vai para PROCESSADOS; com erro vai para COM ERRO
+# (corrija e devolva para a ENTRADA: só o que faltou é lançado)
+function GuardaEntrada() {
+  if ($modo -ne "gravar") { return }
+  foreach ($j in $jsons) {
+    if ($comErro.ContainsKey($j.Name)) { MoveUnico $j (Join-Path $entrada "COM ERRO"); Log "Arquivo com problema guardado em ENTRADA\COM ERRO: $($j.Name)" }
+    else { MoveUnico $j (Join-Path $entrada "PROCESSADOS") }
+  }
+}
+function GravaLog($pasta) {
+  if (-not (Test-Path $pasta)) { New-Item -ItemType Directory $pasta -Force | Out-Null }
+  $log | Set-Content -Encoding UTF8 (Join-Path $pasta "$carimbo - log lancador.txt")
+}
+if (-not $ensaios) {
+  Log "Nenhum ensaio novo para lançar nesses arquivos."
+  GuardaEntrada
+  if ($modo -eq "gravar") { GravaLog (Join-Path $raiz "LOGS") }
+  Pausa
+  if ($comErro.Count) { exit 2 } else { exit 0 }
+}
+
+# ---------- preparar arquivos de destino (cópia de teste ou backup em ANTIGO) ----------
+$pastaTeste = Join-Path $cfg.pastaSaidaTeste $carimbo
+if ($modo -ne "gravar") { New-Item -ItemType Directory $pastaTeste -Force | Out-Null }
+$destinos = @{}
+function Destino($original) {
+  if ($destinos.ContainsKey($original)) { return $destinos[$original] }
+  if (-not (Test-Path $original)) { throw "Arquivo não encontrado: $original" }
+  if ($modo -eq "gravar") {
+    $antigo = Join-Path (Split-Path $original) "ANTIGO"
+    if (-not (Test-Path $antigo)) { New-Item -ItemType Directory $antigo | Out-Null }
+    $nome = [IO.Path]::GetFileNameWithoutExtension($original) + " (antes do app $carimbo)" + [IO.Path]::GetExtension($original)
+    Copy-Item $original (Join-Path $antigo $nome)
+    $destinos[$original] = $original
+  } else {
+    if (-not (Test-Path $pastaTeste)) { New-Item -ItemType Directory $pastaTeste -Force | Out-Null }
+    $copia = Join-Path $pastaTeste (Split-Path $original -Leaf)
+    Copy-Item $original $copia -Force
+    $destinos[$original] = $copia
+  }
+  return $destinos[$original]
+}
+
+# ---------- Excel ----------
+# Filtro de mensagens COM: quando o Excel está ocupado (recalculando o Resumo), o Windows
+# repete a chamada por até 2 minutos em vez de dar RPC_E_CALL_REJECTED.
+if (-not ("FiltroCom" -as [type])) {
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+[ComImport, Guid("00000016-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IOleMessageFilter {
+  [PreserveSig] int HandleInComingCall(int dwCallType, IntPtr hTaskCaller, int dwTickCount, IntPtr lpInterfaceInfo);
+  [PreserveSig] int RetryRejectedCall(IntPtr hTaskCallee, int dwTickCount, int dwRejectType);
+  [PreserveSig] int MessagePending(IntPtr hTaskCallee, int dwTickCount, int dwPendingType);
+}
+public class FiltroCom : IOleMessageFilter {
+  [DllImport("Ole32.dll")] private static extern int CoRegisterMessageFilter(IOleMessageFilter newFilter, out IOleMessageFilter oldFilter);
+  public static void Ligar() { IOleMessageFilter old; CoRegisterMessageFilter(new FiltroCom(), out old); }
+  public static void Desligar() { IOleMessageFilter old; CoRegisterMessageFilter(null, out old); }
+  int IOleMessageFilter.HandleInComingCall(int a, IntPtr b, int c, IntPtr d) { return 0; }
+  int IOleMessageFilter.RetryRejectedCall(IntPtr a, int tick, int tipo) { if (tipo == 2 && tick < 120000) return 200; return -1; }
+  int IOleMessageFilter.MessagePending(IntPtr a, int b, int c) { return 2; }
+}
+"@
+}
+[FiltroCom]::Ligar()
+$xl = New-Object -ComObject Excel.Application
+$xl.Visible = $false
+$xl.DisplayAlerts = $false
+$xl.ScreenUpdating = $false
+$abertos = @{}
+# As fichas abrem num segundo Excel, que é fechado depois de cada ensaio: depois de umas 5 cópias
+# de aba na mesma instância o Excel passa a recusar Worksheet.Copy. O Resumo fica no Excel principal.
+$xf = $null
+function ExcelFichas() {
+  if (-not $script:xf) {
+    $script:xf = New-Object -ComObject Excel.Application
+    $script:xf.Visible = $false
+    $script:xf.DisplayAlerts = $false
+  }
+  return $script:xf
+}
+function Abrir($caminho) {
+  if (-not $abertos.ContainsKey($caminho)) {
+    $app = if ($caminho -eq $destinos[$resumoOrig]) { $xl } else { ExcelFichas }
+    $abertos[$caminho] = $app.Workbooks.Open($caminho)
+  }
+  return $abertos[$caminho]
+}
+$M = [System.Reflection.Missing]::Value
+# copia a aba modelo para o fim da pasta; se o Excel recusar, ativa a pasta e tenta de novo
+# aba que serve de modelo: a "MODELO" (ficha preparada); se não existir, a última aba
+function AbaModelo($wb) {
+  foreach ($s in $wb.Worksheets) { if ($s.Name -eq "MODELO") { return $s } }
+  return $wb.Worksheets.Item($wb.Worksheets.Count)
+}
+# ---------- gráficos (padrão das fichas impressas: só as linhas com resultado, legível) ----------
+$AZUL = 66 + 133 * 256 + 244 * 65536     # 4285F4
+$VERMELHO = 255
+function NovaSerie($ch, $nome, $x, $y) {
+  $s = $ch.SeriesCollection().NewSeries()
+  $s.Name = [string]$nome
+  $s.Values = $y
+  $s.XValues = $x
+  return $s
+}
+function LimpaSeries($ch) { while ($ch.SeriesCollection().Count -gt 0) { $ch.SeriesCollection(1).Delete() | Out-Null } }
+function GraficosBenkelman($ws, $qtd) {
+  # três gráficos (LE, EIXO, LD), da esquerda para a direita; barras = deflexão, linha vermelha = admissível
+  $objs = @(); for ($i = 1; $i -le $ws.ChartObjects().Count; $i++) { $objs += $ws.ChartObjects($i) }
+  $objs = @($objs | Sort-Object { [double]$_.Left })
+  $mapa = @(@("LE","A","E","Q"), @("EIXO","F","J","R"), @("LD","K","O","S"))
+  $adm = 0.0; try { $adm = [double]$ws.Range("H5").Value2 } catch {}
+  for ($g = 0; $g -lt [math]::Min(3, $objs.Count); $g++) {
+    $lado, $cE, $cD, $cA = $mapa[$g]
+    $n = [int]$qtd[$lado]; $r2 = 11 + [math]::Max(1, $n)
+    if ($n -eq 0) { $r2 = 27 }                          # ficha sem leitura (aba MODELO): quadro inteiro, só com a linha do admissível
+    # cada gráfico no seu terço da ficha (LE A:E, Eixo F:J, LD K:O): no modelo eles tinham 360 pt e um invadia o outro
+    try {
+      $c1 = $ws.Range("$(@('A','F','K')[$g])28"); $c2 = $ws.Range("$(@('E','J','O')[$g])28")
+      $objs[$g].Left = $c1.Left + 1; $objs[$g].Width = $c2.Left + $c2.Width - $c1.Left - 2
+    } catch {}
+    $ch = $objs[$g].Chart
+    LimpaSeries $ch
+    $x = $ws.Range("$($cE)12:$cE$r2")
+    $b = NovaSerie $ch "Deflexão" $x $ws.Range("$($cD)12:$cD$r2")
+    $b.ChartType = 51                                   # colunas
+    $b.Format.Fill.Visible = -1; $b.Format.Fill.Solid(); $b.Format.Fill.ForeColor.RGB = $AZUL
+    $b.Format.Line.Visible = 0
+    if ($n -gt 0) {
+      $b.HasDataLabels = $true
+      $dl = $b.DataLabels(); $dl.Position = 2; $dl.NumberFormatLinked = $true   # acima da barra, formato da célula
+      $dl.Font.Size = 8; $dl.Font.Bold = $true; $dl.Font.Color = $AZUL
+      # muitas estacas (gráfico estreito): valores em pé e menores, para não encavalar ("84,076,090,0...")
+      if ($n -gt 8) { try { $dl.Font.Size = 7; $dl.Orientation = 90 } catch {} }
+    }
+    if ($n -gt 8) { try { $ca = $ch.Axes(1); $ca.TickLabels.Font.Size = 7; $ca.TickLabels.Orientation = 90; $ca.TickLabelSpacing = 1 } catch {} }
+    # linha vermelha do admissível (H5) de ponta a ponta: valores fixos, não a coluna auxiliar, que fica vazia sem leitura
+    if ($adm -gt 0) {
+      $cnt = $r2 - 11
+      $l = $ch.SeriesCollection().NewSeries(); $l.Name = "Admissível"
+      $l.Values = [double[]](@($adm) * $cnt); $l.XValues = $x
+      $l.ChartType = 4                                  # linha
+      $l.Format.Line.Visible = -1; $l.Format.Line.ForeColor.RGB = $VERMELHO; $l.Format.Line.Weight = 2
+      if ($cnt -gt 1) { $l.MarkerStyle = -4142 }
+      else {                                            # uma estaca só: a linha teria um ponto; vira um traço vermelho largo
+        try { $l.MarkerStyle = -4115; $l.MarkerSize = 40; $l.MarkerForegroundColor = $VERMELHO; $l.MarkerBackgroundColor = $VERMELHO } catch {}
+      }
+    }
+    $ch.HasLegend = $false
+    try { $ch.ChartGroups(1).GapWidth = 60 } catch {}
+    $maior = $adm
+    for ($r = 12; $r -le $r2; $r++) { $v = $ws.Range("$cD$r").Value2; if ($v -is [double] -and $v -gt $maior) { $maior = $v } }
+  $ay = $ch.Axes(2); $ay.MinimumScale = 0
+    if ($maior -le 270) { $ay.MaximumScale = 300 } else { $ay.MaximumScale = [math]::Ceiling(($maior * 1.15) / 50) * 50 }
+    $ay.MajorUnit = 100
+    $ax = $ch.Axes(1); if ($n -le 8) { $ax.TickLabels.Font.Size = 8 }
+  }
+}
+function GraficoBetume($ws, [switch]$SoVisual) {
+  # -SoVisual: só refaz o gráfico/impressão, sem mexer em nenhum dado da ficha (aba MODELO e abas já lançadas)
+  # granulometria: dispersão com eixo das peneiras em escala log (como na ficha impressa); só as peneiras da faixa
+  if ($ws.ChartObjects().Count -lt 1) { return }
+  $lin = @()
+  # peneiras da faixa: abertura numérica e máxima > 0 (as linhas fora da faixa dão 0% e derrubavam a linha do limite)
+  for ($r = 15; $r -le 27; $r++) {
+    $k = $ws.Range("K$r").Value2
+    if (($ws.Range("A$r").Value2 -is [double]) -and ($ws.Range("J$r").Value2 -is [double]) -and ($k -is [double]) -and $k -gt 0) { $lin += $r }
+  }
+  if (-not $lin) { return }
+  # peneiras que não são da faixa (mín e máx 0%): deixa a linha em branco na tabela (a abertura some junto)
+  if (-not $SoVisual) { for ($r = 15; $r -le 27; $r++) {
+    if ($lin -notcontains $r -and ($ws.Range("K$r").Value2 -is [double]) -and ([double]$ws.Range("K$r").Value2) -eq 0 -and ([double]$ws.Range("J$r").Value2) -eq 0) {
+      $ws.Range("J$r").MergeArea.ClearContents() | Out-Null; $ws.Range("K$r").MergeArea.ClearContents() | Out-Null
+    }
+  } }
+  # peneiras da faixa acima da primeira que reteve material passam 100%: retido acumulado 0
+  foreach ($r in $lin) {
+    if ($SoVisual) { break }
+    if ("$($ws.Range("C$r").Text)" -ne "") { break }
+    $ws.Range("C$r").Value2 = 0
+    $ws.Range("D$r").Formula = "=IF(`$C$r=`"`",`"`",C$r/`$E`$12)"
+    $ws.Range("E$r").Formula = "=IF(`$C$r=`"`",`"`",1-D$r)"
+    $ws.Range("I$r").Formula = "=IF(E$r=`"`",`"`",AVERAGE(H$r,E$r))"
+  }
+  $ws.Calculate()
+  $r1 = ($lin | Measure-Object -Minimum).Minimum; $r2 = ($lin | Measure-Object -Maximum).Maximum
+  $am = @(); foreach ($r in $lin) { if ($ws.Range("I$r").Value2 -is [double]) { $am += $r } }
+  # gráfico enquadrado na largura da ficha (colunas A:K); no modelo ele passava da coluna K
+  try { $co = $ws.ChartObjects(1); $kk = $ws.Range("K1"); $co.Left = $ws.Range("A1").Left + 1; $co.Width = $kk.Left + $kk.Width - $co.Left - 2 } catch {}
+  $ch = $ws.ChartObjects(1).Chart
+  LimpaSeries $ch
+  $x = $ws.Range("A$($r1):A$r2")
+  $mn = NovaSerie $ch "Mínima" $x $ws.Range("J$($r1):J$r2")
+  $mx = NovaSerie $ch "Máxima" $x $ws.Range("K$($r1):K$r2")
+  $a = $null
+  if ($am) { $a1 = ($am | Measure-Object -Minimum).Minimum; $a2 = ($am | Measure-Object -Maximum).Maximum
+             $a = NovaSerie $ch "Amostra" $ws.Range("A$($a1):A$a2") $ws.Range("I$($a1):I$a2") }
+  $ch.ChartType = 74                                    # dispersão com linhas e marcadores
+  foreach ($s in @($mn, $mx)) { $s.MarkerStyle = -4142; $s.Format.Line.Visible = -1; $s.Format.Line.ForeColor.RGB = $VERMELHO; $s.Format.Line.Weight = 1.75 }
+  if ($a) {
+    $a.Format.Line.Visible = -1; $a.Format.Line.ForeColor.RGB = $AZUL; $a.Format.Line.Weight = 1.5
+    $a.MarkerStyle = 8; $a.MarkerSize = 4; $a.MarkerForegroundColor = $AZUL; $a.MarkerBackgroundColor = $AZUL
+  }
+  # sem suavizar: no eixo log a curva suavizada passava de 100% e cruzava os limites (não fica "de acordo com o resultado")
+  foreach ($s in @($mn, $mx, $a)) { if ($s) { $s.Smooth = $false } }
+  # eixo das peneiras igual ao da ficha do Google: 0,08 0,1 0,2 0,4 0,6 0,8 1 2 4 6 8 10 20 40.
+  # O eixo log do Excel só põe números nas potências da base, então: log base 2 de 0,0625 a 64 (sem números nem grades),
+  # e uma série auxiliar em 0% (colunas W:X, fora da área de impressão) com um ponto em cada valor acima,
+  # rótulo embaixo e uma barra de erro vertical até 100% fazendo a linha de grade.
+  $marcas = @(0.08, 0.1, 0.2, 0.4, 0.6, 0.8, 1, 2, 4, 6, 8, 10, 20, 40)
+  for ($i = 0; $i -lt $marcas.Count; $i++) { $ws.Range("W$(15 + $i)").Value2 = [double]$marcas[$i]; $ws.Range("X$(15 + $i)").Value2 = 0 }
+  $um = 14 + $marcas.Count
+  try { $ws.Range("V15:V27").ClearContents() | Out-Null } catch {}   # auxiliar da versão anterior
+  $pn = NovaSerie $ch "Peneiras" $ws.Range("W15:W$um") $ws.Range("X15:X$um")
+  $pn.ChartType = -4169; $pn.MarkerStyle = -4142; $pn.Format.Line.Visible = 0
+  $pn.HasDataLabels = $true
+  $dl = $pn.DataLabels(); $dl.ShowValue = $false; $dl.ShowCategoryName = $true; $dl.Position = 1   # abaixo do ponto
+  $dl.NumberFormat = "General"; $dl.Font.Size = 8
+  try {
+    $pn.ErrorBar(1, 2, 1, 1) | Out-Null                    # xlY, só para cima, valor fixo 1 (= 100%)
+    $eb = $pn.ErrorBars; $eb.EndStyle = 2                  # sem traço na ponta
+    $eb.Format.Line.ForeColor.RGB = 14277081; $eb.Format.Line.Weight = 0.5
+  } catch {}
+  $ch.HasLegend = $false
+  $ax = $ch.Axes(1)
+  $ax.ScaleType = -4133; $ax.LogBase = 2; $ax.MinimumScale = 0.0625; $ax.MaximumScale = 64
+  $ax.CrossesAt = 0.0625                                 # eixo vertical na esquerda
+  $ax.HasMajorGridlines = $false; $ax.HasMinorGridlines = $false
+  $ax.TickLabelPosition = -4142                          # os números vêm dos rótulos da série auxiliar
+  try { $ax.MajorTickMark = -4142; $ax.MinorTickMark = -4142 } catch {}
+  # título do eixo como caixa de texto no rodapé do gráfico: o título normal do eixo ficava na altura dos rótulos das peneiras
+  $ax.HasTitle = $false
+  try {
+    $pa = $ch.PlotArea; $alt = $ch.ChartArea.Height - $pa.InsideTop - 34
+    if ($alt -gt 50) { $pa.InsideHeight = $alt }
+    while ($ch.Shapes.Count -gt 0) { $ch.Shapes.Item(1).Delete() }   # caixa de uma rodada anterior (modelo já arrumado)
+    $tb = $ch.Shapes.AddTextbox(1, $ch.ChartArea.Width / 2 - 60, $ch.ChartArea.Height - 16, 120, 14)
+    $tb.TextFrame2.TextRange.Text = "PENEIRAS (mm)"; $tb.TextFrame2.TextRange.Font.Size = 8
+    $tb.TextFrame2.TextRange.ParagraphFormat.Alignment = 2; $tb.TextFrame2.MarginTop = 0; $tb.TextFrame2.MarginBottom = 0
+    $tb.Line.Visible = 0; $tb.Fill.Visible = 0
+  } catch { $ax.HasTitle = $true; $ax.AxisTitle.Text = "PENEIRAS (mm)"; $ax.AxisTitle.Font.Size = 8 }
+  $ay = $ch.Axes(2)
+  $ay.MinimumScale = 0; $ay.MaximumScale = 1; $ay.MajorUnit = 0.1
+  $ay.HasMajorGridlines = $true; $ay.TickLabels.NumberFormatLinked = $false; $ay.TickLabels.NumberFormatLocal = "0%"; $ay.TickLabels.Font.Size = 8
+  $ay.HasTitle = $true; $ay.AxisTitle.Text = "MÉDIA PASSANTE (%)"; $ay.AxisTitle.Font.Size = 8; $ay.AxisTitle.Font.Bold = $false
+  # título (A1:K1 mesclado) cortava no Excel: quebra de linha e fonte um pouco menor
+  try { $t = $ws.Range("A1").MergeArea; $t.WrapText = $true; $t.Font.Size = 12; $t.VerticalAlignment = -4108 } catch {}
+  # cabeçalho da linha 7 (massa da mistura, massa do papel, teor de ligante) saía cortado: quebra de linha e linha mais alta
+  try { $ws.Range("A7:K7").WrapText = $true; if ($ws.Rows(7).RowHeight -lt 42) { $ws.Rows(7).RowHeight = 42 } } catch {}
+  # impressão: só a ficha (colunas A:K, até a linha das assinaturas), A4 retrato, 1 página
+  $fim = 0
+  for ($r = 40; $r -le 80; $r++) { if ("$($ws.Range("A$r").Text)$($ws.Range("H$r").Text)" -match 'LABORAT|ENGENHEIRO') { $fim = $r; break } }
+  if ($fim) {
+    $ps = $ws.PageSetup
+    $ps.PrintArea = "`$A`$1:`$K`$$fim"; $ps.Orientation = 1; $ps.Zoom = $false; $ps.FitToPagesWide = 1; $ps.FitToPagesTall = 1; $ps.CenterHorizontally = $true
+  }
+}
+function CoresDeflexao($ws) {
+  # deflexão: a regra "maior que o admissível" pintava de vermelho as linhas vazias no Excel (texto vazio conta como maior).
+  # refaz as duas regras por coluna: verde <= admissível; vermelho entre o admissível e 99999 (ignora texto vazio)
+  # a aba só tem estas regras + duas quebradas (=#REF!, fundo branco) e regras "fantasma" que deixavam o 172,0 do Eixo
+  # branco no PDF (verde na tela): apaga tudo da aba e recria só as da deflexão
+  try { $ws.Cells.FormatConditions.Delete() | Out-Null } catch {}
+  # uma área por vez: o Excel em português recusa pelo COM o endereço com vírgulas (0x800A03EC)
+  foreach ($a in "E12:E27","J12:J27","O12:O27") {
+    $rg = $ws.Range($a)
+    $rg.FormatConditions.Delete() | Out-Null
+    $v = $rg.FormatConditions.Add(1, 8, '=$H$5')               # xlCellValue, xlLessEqual
+    $v.Interior.Color = 183 + 225 * 256 + 205 * 65536            # B7E1CD
+    $r = $rg.FormatConditions.Add(1, 1, '=$H$5', '99999')        # xlCellValue, xlBetween
+    $r.Interior.Color = 244 + 199 * 256 + 195 * 65536            # F4C7C3
+  }
+}
+function ImpressaoViga($ws) {
+  # área de impressão: o quadro da ficha até a linha das assinaturas, A4 paisagem, 1 página
+  $fim = 0
+  for ($r = 28; $r -le 70; $r++) { if ("$($ws.Range("B$r").Text)$($ws.Range("J$r").Text)" -match 'Respons') { $fim = $r + 1; break } }
+  if ($fim) { $ps = $ws.PageSetup; $ps.PrintArea = "`$A`$1:`$O`$$fim"; $ps.Orientation = 2; $ps.Zoom = $false; $ps.FitToPagesWide = 1; $ps.FitToPagesTall = 1; $ps.CenterHorizontally = $true }
+}
+function CopiaAba($wb, $modelo) {
+  # devolve a aba nova (achada pelo nome, não pela posição) e garante que ela fica no fim
+  $antes = @{}; foreach ($s in $wb.Worksheets) { $antes[$s.Name] = $true }
+  for ($t = 1; $t -le 3; $t++) {
+    try { $modelo.Copy([Type]::Missing, $wb.Worksheets.Item($wb.Worksheets.Count)); break }
+    catch {
+      if ($t -eq 3) { throw }
+      Start-Sleep -Seconds 2
+      try { $wb.Activate(); $modelo.Activate() } catch {}
+    }
+  }
+  $nova = $null
+  foreach ($s in $wb.Worksheets) { if (-not $antes.ContainsKey($s.Name)) { $nova = $s } }
+  if (-not $nova) { throw "a cópia da aba modelo não apareceu na ficha" }
+  if ($nova.Index -ne $wb.Worksheets.Count) {
+    Log "   aviso: a cópia da aba modelo ficou na posição $($nova.Index) de $($wb.Worksheets.Count); movida para o fim"
+    $nova.Move([Type]::Missing, $wb.Worksheets.Item($wb.Worksheets.Count))
+  }
+  return $nova
+}
+function FechaFichas() {
+  $chaveRes = $destinos[$resumoOrig]
+  foreach ($k in @($abertos.Keys)) {
+    if ($k -ne $chaveRes) {
+      $w = $abertos[$k]
+      try { $w.Save() } catch { Log "   aviso: não consegui salvar $k ($($_.Exception.Message))" }
+      try { $w.Close($false) } catch {}
+      $abertos.Remove($k)
+    }
+  }
+  if ($script:xf) {
+    try { $script:xf.Quit() } catch {}
+    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($script:xf) | Out-Null
+    $script:xf = $null
+    [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+  }
+}
+
+function DataOA($iso) { return ([datetime]::ParseExact($iso, "yyyy-MM-dd", $null)).ToOADate() }
+function DataBR($iso) { return ([datetime]::ParseExact($iso, "yyyy-MM-dd", $null)).ToString("dd/MM/yyyy") }
+function Rua($e) { return "Rua: " + $e.rua }
+function NomeAba($wb, $nome) {
+  $n = ($nome -replace '[\\/\?\*\[\]:]', ' ').Trim()
+  if ($n.Length -gt 31) { $n = $n.Substring(0, 31) }
+  foreach ($s in $wb.Worksheets) { if ($s.Name -eq $n) { return $null } }
+  return $n
+}
+function Por($v) { if ($null -eq $v) { return $null } else { return [double]$v } }
+# No PowerShell 5.1 o COM do Excel recusa valores vindos de variável/JSON sem cast explícito
+function Escreve($ws, $end, $v) {
+  if ($null -eq $v -or "$v" -eq "") { return }
+  if ($v -is [string]) { $ws.Range($end).Value2 = [string]$v }
+  elseif ($v -is [ValueType]) { $ws.Range($end).Value2 = [double]$v }
+  else { $ws.Range($end).Value2 = "$v" }
+}
+function EstacaM($s) { if ("$s" -match '^\s*(\d+)\s*\+\s*(\d+(?:[.,]\d+)?)\s*$') { return [double]$matches[1] * 20 + [double]($matches[2] -replace ',', '.') } else { return 1e9 } }
+function UltimaLinha($ws, $col, $min) {
+  $r = $ws.Cells($ws.Rows.Count, $col).End(-4162).Row   # xlUp
+  if ($r -lt $min) { return $min - 1 } else { return $r }
+}
+# copia a linha anterior (formatos e fórmulas) para a nova e limpa as células de dado
+function NovaLinha($ws, $col, $prim = 6) {
+  $ult = UltimaLinha $ws $col $prim
+  if ($ult -lt $prim) { return $prim }   # aba vazia: usa a linha-modelo (já tem as fórmulas)
+  $nova = $ult + 1
+  $null = $ws.Rows($ult).Copy($ws.Rows($nova))
+  return $nova
+}
+# repõe na linha nova as fórmulas da linha de referência (primeira linha de dados da aba)
+# para cada coluna, procura de baixo para cima a última linha que tem fórmula (até a linha de referência)
+function FormulasDe($ws, $linhaRef, $nova) {
+  for ($c = 1; $c -le 26; $c++) {
+    for ($l = $nova - 1; $l -ge $linhaRef; $l--) {
+      $ref = $ws.Cells($l, $c)
+      if ($ref.HasFormula) { $ws.Cells($nova, $c).FormulaR1C1 = $ref.FormulaR1C1; break }
+      if ($null -ne $ref.Value2 -and "$($ref.Value2)" -ne "") { break }   # célula com valor digitado: mantém como está
+    }
+  }
+}
+function NumOuTexto($t) { $d = 0.0; if ([double]::TryParse(($t -replace ',', '.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { return $d } else { return $t } }
+function LimpaDados($ws, $linha, $colunas) { foreach ($c in $colunas) { $cel = $ws.Range("$c$linha"); if (-not $cel.HasFormula) { $cel.ClearContents() | Out-Null } } }
+function MaterialResumo($m) { $x = MapaCfg "materialNoResumo" $m; if ($x) { return $x } else { return $m } }
+
+$lancados = @()
+$resumoOrig = $cfg.resumo
+$wbRes = $null
+
+try {
+  foreach ($e in $ensaios) {
+    $rot = "$($e.tipo) R$($e.registro) - $(if ($e.rua) { $e.rua } else { $e.local }) - $($e.data)"
+    try {
+      if ($e.tipo -eq "densidade") {
+        # ===== ficha =====
+        # desde 23/11: uma planilha só para todos os materiais (config "fichaDensidade"); "fichasDensidade" por material fica como reserva
+        $orig = if ($cfg.fichaDensidade) { $cfg.fichaDensidade } else { MapaCfg "fichasDensidade" $e.material }
+        if (-not $orig) { throw "sem ficha de densidade configurada (config.json, fichaDensidade)" }
+        $furos = @($e.furos | Where-Object { $null -ne $_.antes -or $null -ne $_.umidade })
+        if ($furos.Count -gt 8) { throw "a ficha tem 8 linhas e o ensaio tem $($furos.Count) furos" }
+        $wb = Abrir (Destino $orig)
+        # aba = número da série, igual ao Registro do Resumo (série 52 -> aba "52"; furos 52.1, 52.2... nas linhas 10-17)
+        $nome = NomeAba $wb ("$($e.registro)".Trim())
+        if (-not $nome) { throw "a planilha de densidade já tem a aba '$("$($e.registro)".Trim())' (série repetida ou lançada à mão?)" }
+        $modelo = AbaModelo $wb
+        $ws = CopiaAba $wb $modelo
+        $ws.Name = $nome
+        $ws.Range("A10:J17").ClearContents() | Out-Null
+        $ws.Range("Q10:Q17").ClearContents() | Out-Null
+        Escreve $ws "I2" (NumOuTexto "$($e.registro)")
+        Escreve $ws "B3" ("RUA: " + ("$($e.rua)".ToUpper()))
+        Escreve $ws "B4" $e.segmento
+        Escreve $ws "B5" ("$($e.camada)".ToUpper())
+        Escreve $ws "I3" ("$($e.procedencia)".ToUpper())
+        Escreve $ws "I4" ("$($e.empreiteira)".ToUpper())
+        Escreve $ws "I5" ("$($e.material)".ToUpper())
+        Escreve $ws "R2" $e.otima
+        Escreve $ws "R3" $e.densReal
+        Escreve $ws "R4" $e.areiaCone
+        Escreve $ws "R5" $e.densAreia
+        $l = 10
+        foreach ($f in $furos) {
+          Escreve $ws "A$l" (DataOA $e.data)
+          Escreve $ws "B$l" $e.segmento
+          Escreve $ws "C$l" $f.estaca
+          Escreve $ws "D$l" ("$($f.posicao)".ToUpper())
+          Escreve $ws "E$l" $f.altura
+          Escreve $ws "F$l" $f.antes
+          Escreve $ws "G$l" $f.depois
+          Escreve $ws "H$l" $f.material
+          # retido vazio vira 0: com I em branco a fórmula N da ficha dá #VALOR!
+          if ($null -ne $f.retido) { Escreve $ws "I$l" $f.retido } else { $ws.Range("I$l").Value2 = [double]0 }
+          Escreve $ws "J$l" $e.densLab
+          Escreve $ws "Q$l" $f.umidade
+          $l++
+        }
+        if ($e.obs) { Escreve $ws "A18" ("OBSERVAÇÃO: " + $e.obs) }
+        $ws.Calculate()
+        # ===== resumo: aba Mat. Granular =====
+        if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
+        $wr = $wbRes.Worksheets.Item("Mat. Granular")
+        $i = 0; $otProj = $null
+        foreach ($f in $furos) {
+          $i++
+          $gc = $ws.Range("S$(9 + $i)").Value2
+          $r = NovaLinha $wr 4 10
+          # colunas do Resumo (Mat. Granular): E material, F procedência, G camada, H lado, I GC, K umidade, L ótima do projeto
+          LimpaDados $wr $r @("A","B","C","D","E","F","G","H","I","K","L","O","R","S","U","V")
+          FormulasDe $wr 10 $r
+          $reg = if ("$($e.registro)" -match '\.') { "$($e.registro)" } else { "$($e.registro).$i" }
+          Escreve $wr "A$r" (NumOuTexto $reg)
+          Escreve $wr "B$r" (DataOA $e.data)
+          Escreve $wr "C$r" (Rua $e)
+          Escreve $wr "D$r" ($f.estaca)
+          Escreve $wr "E$r" (MaterialResumo $e.material)
+          Escreve $wr "F$r" ($e.procedencia)
+          Escreve $wr "G$r" ($e.camada)
+          Escreve $wr "H$r" (@{ "LE" = "Esquerdo"; "Eixo" = "Eixo"; "LD" = "Direito" }[$f.posicao])
+          if ($gc -is [double]) { $wr.Range("I$r").Value2 = [math]::Round($gc / 100, 4) }
+          if ($null -ne $f.umidade) { $wr.Range("K$r").Value2 = [math]::Round([double]$f.umidade / 100, 4) }
+          # ótima: vale sempre a da Proj. Exec. (fórmula da coluna L, por material + procedência); o valor do campo só entra se não houver projeto
+          $xl.Calculate()
+          $k = $wr.Range("L$r")
+          if ($k.Value2 -is [double] -and $k.Value2 -gt 0) {
+            $otProj = [math]::Round($k.Value2 * 100, 2)
+            if ($i -eq 1 -and $null -ne $e.otima -and [math]::Abs($otProj - [double]$e.otima) -gt 0.05) {
+              Log "   aviso: R$($e.registro) - o campo usou umidade ótima $($e.otima)%; vale a da Proj. Exec.: $otProj%"
+            }
+          }
+          elseif ($null -ne $e.otima) {
+            $k.Value2 = [math]::Round([double]$e.otima / 100, 4)
+            Log "   aviso: R$($e.registro).$i - material sem umidade ótima na Proj. Exec.; gravei a do campo ($($e.otima)%) na coluna proj."
+          }
+        }
+        # a ficha mostra a mesma ótima do Resumo
+        if ($otProj) { $ws.Range("R2").Value2 = [double]$otProj; $ws.Calculate() }
+        Log "OK  $rot -> aba '$nome' + $($furos.Count) linha(s) no Resumo (Mat. Granular)"
+      }
+      elseif ($e.tipo -eq "benkelman") {
+        $orig = MapaCfg "fichasBenkelman" $e.material
+        if (-not $orig) { throw "sem ficha de Benkelman configurada para o material '$($e.material)' (config.json, fichasBenkelman)" }
+        foreach ($lado in "LE","EIXO","LD") { if (@($e.leituras.$lado).Count -gt 16) { throw "a ficha tem 16 linhas e o lado $lado tem mais leituras" } }
+        $wb = Abrir (Destino $orig)
+        $nome = NomeAba $wb ("VIGA-R$($e.registro)-$(("$($e.material)".ToUpper()))-$(("$($e.rua)".ToUpper()))")
+        if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
+        $modelo = AbaModelo $wb
+        $ws = CopiaAba $wb $modelo
+        $ws.Name = $nome
+        foreach ($faixa in "A12:D27","F12:I27","K12:N27") { $ws.Range($faixa).ClearContents() | Out-Null }
+        # repõe fórmulas de deflexão que tenham sido digitadas como número na ficha modelo
+        for ($l = 12; $l -le 27; $l++) {
+          $ws.Range("E$l").Formula = "=IF(D$l=`"`",`"`",(B$l-D$l)*H`$6)"
+          $ws.Range("J$l").Formula = "=IF(I$l=`"`",`"`",(G$l-I$l)*H`$6)"
+          $ws.Range("O$l").Formula = "=IF(N$l=`"`",`"`",(L$l-N$l)*H`$6)"
+        }
+        Escreve $ws "H4" (DataBR $e.data)
+        Escreve $ws "M4" (NumOuTexto "$($e.registro)")
+        Escreve $ws "C5" ("RUA: " + ("$($e.rua)".ToUpper()))
+        Escreve $ws "H5" $e.admissivel
+        Escreve $ws "M5" ("$($e.camada)".ToUpper())
+        Escreve $ws "C6" $e.segmento
+        Escreve $ws "H6" $e.k
+        Escreve $ws "M6" ("$($e.procedencia)".ToUpper())
+        Escreve $ws "C7" ("$($e.material)".ToUpper())
+        Escreve $ws "H7" ("$($e.empreiteira)".ToUpper())
+        $cols = @{ "LE" = @("A","B","C","D"); "EIXO" = @("F","G","H","I"); "LD" = @("K","L","M","N") }
+        foreach ($lado in "LE","EIXO","LD") {
+          $l = 12
+          foreach ($p in @($e.leituras.$lado)) {
+            $c = $cols[$lado]
+            Escreve $ws "$($c[0])$l" $p.estaca
+            Escreve $ws "$($c[1])$l" $p.li
+            if ($null -ne $p.l25) { Escreve $ws "$($c[2])$l" $p.l25 } else { $ws.Range("$($c[2])$l").Value2 = "-" }
+            Escreve $ws "$($c[3])$l" $p.lf
+            $l++
+          }
+        }
+        $qtd = @{}; foreach ($lado in "LE","EIXO","LD") { $qtd[$lado] = @($e.leituras.$lado).Count }
+        $ws.Calculate()
+        try { CoresDeflexao $ws } catch { Log "   aviso: não consegui ajustar as cores da deflexão na aba '$nome' ($($_.Exception.Message))" }
+        try { ImpressaoViga $ws } catch { Log "   aviso: não consegui ajustar a impressão da aba '$nome' ($($_.Exception.Message))" }
+        try { GraficosBenkelman $ws $qtd } catch { Log "   aviso: não consegui ajustar os gráficos da aba '$nome' ($($_.Exception.Message))" }
+        # ===== resumo: aba Viga. Benk — uma linha por estaca, LE / EIXO / LD lado a lado =====
+        if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
+        $wr = $wbRes.Worksheets.Item("Viga. Benk")
+        $porEstaca = [ordered]@{}
+        foreach ($lado in "LE","EIXO","LD") {
+          foreach ($p in @($e.leituras.$lado)) {
+            if ($null -eq $p.deflexao -or -not $p.estaca) { continue }
+            if (-not $porEstaca.Contains($p.estaca)) { $porEstaca[$p.estaca] = @{} }
+            $porEstaca[$p.estaca][$lado] = $p.deflexao
+          }
+        }
+        $estacas = $porEstaca.Keys | Sort-Object { EstacaM $_ }
+        $prim = $true
+        foreach ($est in $estacas) {
+          $r = NovaLinha $wr 4
+          LimpaDados $wr $r @("A","B","C","D","E","F","G","H","I")
+          FormulasDe $wr 6 $r
+          if ($prim) {
+            Escreve $wr "A$r" (NumOuTexto "$($e.registro)")
+            Escreve $wr "B$r" (DataOA $e.data)
+            $wr.Range("B$r").NumberFormatLocal = "dd/mm/aa"
+            Escreve $wr "C$r" (Rua $e)
+            $prim = $false
+          }
+          Escreve $wr "D$r" ($est)
+          Escreve $wr "E$r" (MaterialResumo $e.material)
+          Escreve $wr "F$r" ($e.camada)
+          $d = $porEstaca[$est]
+          if ($d.ContainsKey("LE")) { $wr.Range("G$r").Value2 = [double]$d["LE"] }
+          if ($d.ContainsKey("EIXO")) { $wr.Range("H$r").Value2 = [double]$d["EIXO"] }
+          if ($d.ContainsKey("LD")) { $wr.Range("I$r").Value2 = [double]$d["LD"] }
+        }
+        Log "OK  $rot -> aba '$nome' + $(@($estacas).Count) linha(s) no Resumo (Viga. Benk)"
+      }
+      elseif ($e.tipo -eq "concreto") {
+        # ===== Moldagem de concreto: uma aba por série =====
+        $orig = $cfg.fichaConcreto
+        if (-not $orig) { throw "ficha de concreto não configurada (config.json, fichaConcreto)" }
+        $wb = Abrir (Destino $orig)
+        $nome = NomeAba $wb ("SÉRIE $($e.registro)-$("$($e.elemento)".ToUpper())")
+        if (-not $nome) { throw "a ficha já tem uma aba com esse nome (série lançada à mão?)" }
+        $modelo = AbaModelo $wb
+        $ws = CopiaAba $wb $modelo
+        $ws.Name = $nome
+        $ws.Range("B12:I26").ClearContents() | Out-Null
+        $ws.Range("K12:Q26").ClearContents() | Out-Null
+        for ($l = 12; $l -le 26; $l++) { $ws.Range("J$l").Formula = "=IF(OR(F$l=`"`",I$l=`"`"),`"`",MOD(I$l-F$l,1))" }
+        Escreve $ws "J4" ("$($e.concreteira)".ToUpper())
+        Escreve $ws "P4" (DataOA $e.data)
+        if ($e.rua) { Escreve $ws "C5" ("RUA: " + "$($e.rua)".ToUpper()) }
+        Escreve $ws "AE4" $e.fck
+        Escreve $ws "G8" $e.fck
+        Escreve $ws "L7" $e.cimento
+        # dosagem e especificação: vêm do app (o texto fixo do modelo é sempre substituído; campo vazio fica só com o rótulo)
+        $d = $e.dosagem
+        if ($d) {
+          $bomb = "$($e.lancamento)" -match '^bomb'
+          $ws.Range("B7").Value2 = "LANÇAMENTO:       ( $(if ($bomb) {' '} else {'X'}) )  CONVENCIONAL      ( $(if ($bomb) {'X'} else {' '}) )  BOMBEADO"
+          $ws.Range("B8").Value2 = "DIÂMETRO MÁXIMO DO  AGREGADO: " + $(if ("$($d.dmax)" -match '^\s*[\d.,]+\s*$') { "$("$($d.dmax)".Trim())mm" } else { "$($d.dmax)" })
+          $ws.Range("B9").Value2 = "ABATIMENTO ESPECIFICO: " + $(if ("$($e.slumpEsp)") { "$($e.slumpEsp) + - $($e.tolSlump)" } else { "" })
+          $ws.Range("L8").Value2 = "$($d.aditivo)".ToUpper()
+          $vt = if ("$($e.acumulado)" -and [double]$e.acumulado -gt 0) { $e.acumulado } elseif ("$($e.volume)" -and [double]$e.volume -gt 0) { $e.volume } else { "" }
+          $ws.Range("L9").Value2 = $(if ("$vt") { ("$vt" -replace '\.', ',') + "m³" } else { "" })
+          $ws.Range("N7").Value2 = "CIMENTO (Kg): $($d.dCimento)"
+          $ws.Range("P7").Value2 = "PEDRA (Kg): " + $(if ("$($d.dPedra0)") { "0-$($d.dPedra0)" } else { "" })
+          $ws.Range("N8").Value2 = "AREIA (Kg): $($d.dAreia)"
+          $ws.Range("P8").Value2 = "ÁGUA (Kg): $($d.dAgua)"
+          $ws.Range("N9").Value2 = "PEDRA (Kg): " + $(if ("$($d.dPedra1)") { "1- $($d.dPedra1)" } else { "" })
+          $ws.Range("P9").Value2 = "ADITIVO (Kg): $($d.dAditivo)"
+        }
+        else { Log "AVISO: $rot veio de uma versão antiga do app, sem dosagem; a aba ficou com o texto do modelo" }
+        Escreve $ws "B12" (NumOuTexto "$($e.registro)")
+        Escreve $ws "C12" $e.cps
+        Escreve $ws "D12" $e.slump
+        Escreve $ws "E12" $e.nf
+        foreach ($par in @(@("F12","hDosagem"), @("G12","hChegada"), @("H12","hInicio"), @("I12","hTermino"))) {
+          $h = "$($e.($par[1]))"
+          if ($h -match '^(\d{1,2}):(\d{2})') { $ws.Range($par[0]).Value2 = [double](([int]$matches[1] * 60 + [int]$matches[2]) / 1440.0) }
+        }
+        Escreve $ws "K12" $e.volume
+        Escreve $ws "L12" $e.acumulado
+        Escreve $ws "M12" ("$($e.placa)".ToUpper())
+        $elem = "$($e.elemento)".ToUpper(); if ($e.lado -and $e.lado -ne "–") { $elem = "$elem - $("$($e.lado)".ToUpper())" }
+        Escreve $ws "N12" $elem
+        if ($e.idades) { $ws.Range("Q12").NumberFormat = "@"; $ws.Range("Q12").Value2 = [string]$e.idades }   # texto: "7/28" não pode virar data
+        Escreve $ws "N30" ("$($e.moldador)".ToUpper())
+        if ($e.obs) { Escreve $ws "B29" ("OBSERVAÇÃO: " + $e.obs) }
+        # ===== resumo: aba Concreto =====
+        if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
+        $wr = $wbRes.Worksheets.Item("Concreto")
+        $r = NovaLinha $wr 1
+        LimpaDados $wr $r @("A","B","C","D","E","F","G","H","I","J","K","M","N","Q","R")
+        FormulasDe $wr 6 $r
+        Escreve $wr "A$r" (NumOuTexto "$($e.registro)")
+        Escreve $wr "B$r" (DataOA $e.data)
+        $wr.Range("B$r").NumberFormatLocal = "dd/mm/aa"
+        Escreve $wr "C$r" $(if ($e.local) { $e.local } else { Rua $e })
+        Escreve $wr "E$r" $e.elemento
+        if ($e.lado -and $e.lado -ne "–") { Escreve $wr "F$r" $e.lado }
+        Escreve $wr "G$r" $e.slump
+        Escreve $wr "H$r" "10 X 20"
+        Escreve $wr "I$r" "Compressão"
+        Escreve $wr "J$r" $e.estrutura
+        Escreve $wr "K$r" $e.fck
+        Log "OK  $rot -> aba '$nome' + linha $r no Resumo (Concreto)"
+      }
+      elseif ($e.tipo -eq "taxa") {
+        # ===== Imprimação (EAI) / Pintura de ligação (RR-1C) =====
+        $orig = MapaCfg "fichasTaxa" $e.emulsao
+        if (-not $orig) { throw "sem ficha configurada para a emulsão '$($e.emulsao)' (config.json, fichasTaxa)" }
+        $bands = @($e.bandejas)
+        if ($bands.Count -gt 5) { throw "a ficha tem 5 linhas e o ensaio tem $($bands.Count) bandejas" }
+        $wb = Abrir (Destino $orig)
+        $pref = if ($e.emulsao -eq "RR-1C") { "RR1C" } else { "EAI" }
+        $nome = NomeAba $wb ("$pref-R$($e.registro)-$("$($e.camada)".ToUpper().Replace(' - ', ' '))-$("$($e.rua)".ToUpper())")
+        if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
+        $modelo = AbaModelo $wb
+        $ws = CopiaAba $wb $modelo
+        $ws.Name = $nome
+        $ws.Range("A11:G15").ClearContents() | Out-Null
+        $ws.Range("I11:I15").ClearContents() | Out-Null
+        # a aba modelo pode não ter as fórmulas em todas as linhas: repõe H e J nas 5
+        for ($l = 11; $l -le 15; $l++) {
+          $ws.Range("H$l").Formula = "=IF(G$l=`"`",`"`",G$l-F$l)"
+          $ws.Range("J$l").Formula = "=IF(B$l=0,`"`",H$l/I$l/1000)"
+        }
+        $ws.Range("G4").NumberFormat = "@"
+        Escreve $ws "G4" ([string]$e.registro)
+        Escreve $ws "B5" ("RUA: " + "$($e.rua)".ToUpper())
+        Escreve $ws "G5" ("$($e.camada)".ToUpper())
+        Escreve $ws "B6" $e.segmento
+        Escreve $ws "G6" $pref
+        Escreve $ws "B7" ("$($e.empreiteira)".ToUpper())
+        if ($null -ne $e.proj -and $null -ne $e.tolerancia) {
+          Escreve $ws "G7" (("{0:0.0#} A {1:0.0#}" -f ([double]$e.proj - [double]$e.tolerancia), ([double]$e.proj + [double]$e.tolerancia)) -replace '\.', ',')
+        }
+        $seg = if ($e.segmento) { "$($e.segmento)" } else { "-" }
+        $l = 11
+        foreach ($b in $bands) {
+          Escreve $ws "A$l" (DataOA $e.data)
+          Escreve $ws "B$l" $seg
+          Escreve $ws "C$l" $b.estaca
+          Escreve $ws "D$l" ("$($b.posicao)".ToUpper())
+          Escreve $ws "E$l" $b.temp
+          Escreve $ws "F$l" $b.bandeja
+          Escreve $ws "G$l" $b.total
+          Escreve $ws "I$l" $b.area
+          $l++
+        }
+        if ($e.obs) { Escreve $ws "A27" ("OBSERVAÇÃO: " + $e.obs) }
+        $ws.Calculate()
+        # ===== resumo: aba Imprimação ou P. Ligação =====
+        if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
+        $aba = if ($e.emulsao -eq "RR-1C") { "P. Ligação" } else { "Imprimação" }
+        $wr = $wbRes.Worksheets.Item($aba)
+        $i = 0
+        foreach ($b in $bands) {
+          $i++
+          $tx = $ws.Range("J$(10 + $i)").Value2
+          $r = NovaLinha $wr 4
+          LimpaDados $wr $r @("A","B","C","D","E","F","G","H","I")
+          FormulasDe $wr 6 $r
+          $reg = if ("$($e.registro)" -match '\.') { "$($e.registro)" } else { "$($e.registro).$i" }
+          $wr.Range("A$r").NumberFormat = "@"
+          Escreve $wr "A$r" ([string]$reg)
+          Escreve $wr "B$r" (DataOA $e.data)
+          $wr.Range("B$r").NumberFormatLocal = "dd/mm/aa"
+          Escreve $wr "C$r" (Rua $e)
+          Escreve $wr "D$r" ($b.estaca)
+          Escreve $wr "E$r" ($e.emulsao)
+          Escreve $wr "F$r" ($e.camada)
+          if ($tx -is [double]) { $wr.Range("G$r").Value2 = [math]::Round($tx, 2) }
+          if (-not $wr.Range("H$r").HasFormula -and $null -ne $e.proj) { Escreve $wr "H$r" ([double]$e.proj) }
+        }
+        Log "OK  $rot -> aba '$nome' + $($bands.Count) linha(s) no Resumo ($aba)"
+      }
+      elseif ($e.tipo -eq "betume") {
+        # ===== CBUQ teor de betume + granulometria =====
+        # ficha "TEOR DE BETUME" (uma por faixa): cabeçalho H2/H3/C3/C4/H4/C5/H5, pesagens na linha 8, retidos na coluna C das linhas 15–27
+        $avisoFicha = ""
+        $nome = $null
+        $orig = MapaCfg "fichasBetume" $e.faixa
+        if (-not $orig) { $avisoFicha = "; sem ficha configurada para a faixa '$($e.faixa)' (config.json, fichasBetume): lancei só no Resumo" }
+        else {
+          $wb = Abrir (Destino $orig)
+          $nome = NomeAba $wb ("BETUME-R$($e.registro)-FAIXA $($e.faixa)-$("$($e.rua)".ToUpper())")
+          if (-not $nome) { throw "a ficha já tem uma aba com esse nome (ensaio lançado à mão?)" }
+          $modelo = AbaModelo $wb
+          $ws = CopiaAba $wb $modelo
+          $ws.Name = $nome
+          try {
+          # células mescladas (A8:B8, E8:F8...): limpar a mescla inteira
+          foreach ($c in @("A8","C8","E8","A9","C9","E9")) { $ws.Range($c).MergeArea.ClearContents() | Out-Null }
+          foreach ($c in @("D8","D9")) { if (-not $ws.Range($c).HasFormula) { $ws.Range($c).MergeArea.ClearContents() | Out-Null } }
+          for ($l = 15; $l -le 27; $l++) { foreach ($c in @("C","F")) { $ws.Range("$c$l").MergeArea.ClearContents() | Out-Null } }
+          Escreve $ws "H2" (NumOuTexto "$($e.registro)")
+          Escreve $ws "H3" (DataOA $e.data)
+          Escreve $ws "C3" ("Rua " + $e.rua)
+          Escreve $ws "C4" $e.segmento
+          Escreve $ws "H4" ("$($e.empreiteira)".ToUpper())
+          Escreve $ws "C5" ("CBUQ - FAIXA `"$($e.faixa)`"")
+          Escreve $ws "H5" ("$($e.procedencia)".ToUpper())
+          Escreve $ws "K12" $e.faixa
+          Escreve $ws "A8" $e.mistura
+          Escreve $ws "C8" $e.papel
+          if (-not $ws.Range("D8").HasFormula) { Escreve $ws "D8" $e.papelAgreg }
+          Escreve $ws "E8" $e.agregado
+          # a aba modelo pode estar sem as fórmulas do teor (ex.: "TEOR DE BETUM copia"): repõe G8, I8 e J8
+          if (-not $ws.Range("G8").HasFormula) { $ws.Range("G8").Formula = '=IF(A8="","",A8-E8)' }
+          if (-not $ws.Range("I8").HasFormula) { $ws.Range("I8").Formula = '=IF(G8="","",(A8-E8)/A8)' }
+          if (-not $ws.Range("J8").HasFormula) { $ws.Range("J8").Formula = '=IF(I8="","",AVERAGE(I8:I9))' }
+          # linha de cada peneira pela abertura (mm) da coluna A
+          $mmPen = @{ "2" = @(50.8, 50); "112" = @(38.1, 37.5); "1" = @(25.4, 25); "34" = @(19.1, 19); "12" = @(12.7, 12.5); "38" = @(9.5); "4" = @(4.8, 4.75); "10" = @(2.0); "40" = @(0.42); "80" = @(0.18); "200" = @(0.075) }
+          $faltou = @()
+          foreach ($pn in @($e.peneiras)) {
+            if ($null -eq $pn.retidoAcum) { continue }
+            $linha = 0
+            for ($l = 15; $l -le 27; $l++) {
+              $v = $ws.Range("A$l").Value2
+              if ($v -is [double]) { foreach ($m in $mmPen["$($pn.peneira)"]) { if ([math]::Abs($v - $m) -lt 0.011) { $linha = $l } } }
+              if ($linha) { break }
+            }
+            if (-not $linha) { $faltou += $pn.nome; continue }
+            Escreve $ws "C$linha" ([double]$pn.retidoAcum)
+            # a aba modelo pode estar sem as fórmulas: repõe retido/passante/média nessa linha
+            $ws.Range("D$linha").Formula = "=IF(`$C$linha=`"`",`"`",C$linha/`$E`$12)"
+            $ws.Range("E$linha").Formula = "=IF(`$C$linha=`"`",`"`",1-D$linha)"
+            $ws.Range("I$linha").Formula = "=IF(E$linha=`"`",`"`",AVERAGE(H$linha,E$linha))"
+          }
+          if ($faltou) { $avisoFicha = "; peneira(s) sem linha na ficha: $($faltou -join ', ')" }
+          for ($l = 40; $l -le 60; $l++) {
+            if ("$($ws.Range("A$l").Value2)" -like "OBSERVA*") { $ws.Range("A$l").Value2 = [string]("OBSERVAÇÃO: " + $(if ($e.obs) { $e.obs } else { "" })); break }
+          }
+          $ws.Calculate()
+          try { GraficoBetume $ws } catch { Log "   aviso: não consegui ajustar o gráfico da aba '$nome' ($($_.Exception.Message))" }
+          }
+          catch {
+            # não deixa aba pela metade (senão ela vira o modelo do próximo lançamento)
+            $ws.Application.DisplayAlerts = $false; try { $ws.Delete() | Out-Null } catch {}
+            throw
+          }
+        }
+        if (-not $wbRes) { $wbRes = Abrir (Destino $resumoOrig) }
+        $wr = $wbRes.Worksheets.Item("CBUQ Gl Betume")
+        $r = NovaLinha $wr 2 15          # coluna B (data): a coluna A já vem numerada até o fim da aba
+        if ($r -lt 15) { $r = 15 }
+        LimpaDados $wr $r @("A","B","C","D","E","F","G","I","J","K","L","M","N","O","P","Q","R","S","U","X","Y","AB","AC","AF")
+        FormulasDe $wr 15 $r
+        Escreve $wr "A$r" (NumOuTexto "$($e.registro)")
+        Escreve $wr "B$r" (DataOA $e.data)
+        $wr.Range("B$r").NumberFormatLocal = "dd/mm/aa"
+        Escreve $wr "C$r" (Rua $e)
+        Escreve $wr "D$r" $e.segmento
+        Escreve $wr "E$r" $e.faixa
+        Escreve $wr "F$r" $e.camada
+        $lado = switch ("$($e.lado)") { "LE" { "Esquerdo" } "LD" { "Direito" } default { "Eixo" } }
+        Escreve $wr "G$r" $lado
+        $ordem = @("2","112","1","34","12","38","4","10","40","80","200")   # colunas I..S
+        foreach ($pn in @($e.peneiras)) {
+          $ix = [array]::IndexOf($ordem, "$($pn.peneira)")
+          if ($ix -ge 0 -and $null -ne $pn.passante) { $wr.Cells($r, 9 + $ix).Value2 = [double][math]::Round([double]$pn.passante, 3) }
+        }
+        # teor e projeto como fração (as colunas X e Y são formatadas em %)
+        if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor / 100, 4); $wr.Range("X$r").NumberFormatLocal = "0,00%" }
+        if ($null -ne $e.proj) { $wr.Range("Y$r").Value2 = [double]([double]$e.proj / 100); $wr.Range("Y$r").NumberFormatLocal = "0,0%" }
+        $txtAba = if ($nome) { "aba '$nome' + " } else { "" }
+        Log "OK  $rot -> $($txtAba)linha $r no Resumo (CBUQ Gl Betume)$avisoFicha"
+      }
+      else { throw "tipo de ensaio desconhecido: $($e.tipo)" }
+      $lancados += [pscustomobject]@{ id = $e.id; tipo = $e.tipo; registro = $e.registro; rua = $e.rua; data = $e.data; lancado = $agora.ToString("yyyy-MM-dd HH:mm"); modo = $modo; arquivo = $e.arquivo }
+    }
+    catch { Log "ERRO $rot -> $($_.Exception.Message) (linha $($_.InvocationInfo.ScriptLineNumber))"; $comErro[$e.arquivo] = $true }
+    finally { FechaFichas }
+  }
+  foreach ($wb in $abertos.Values) { $wb.Save() }
+}
+finally {
+  foreach ($wb in $abertos.Values) { try { $wb.Close($false) } catch {} }
+  if ($xf) { try { $xf.Quit() } catch {} }
+  $xl.Quit()
+  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($xl) | Out-Null
+  [FiltroCom]::Desligar()
+}
+
+# só marca como lançado no modo gravar (no modo teste dá para repetir quantas vezes quiser)
+if ($modo -eq "gravar" -and $lancados) {
+  if (Test-Path $registroLanc) { $lancados | Export-Csv $registroLanc -Append -NoTypeInformation -Encoding UTF8 }
+  else { $lancados | Export-Csv $registroLanc -NoTypeInformation -Encoding UTF8 }
+}
+GuardaEntrada
+
+Log ""
+if ($modo -eq "gravar") { Log "Pronto. Arquivos originais atualizados; versões anteriores em ANTIGO." }
+else { Log "Pronto (modo TESTE). Cópias em: $pastaTeste" }
+GravaLog $(if ($modo -eq "gravar") { Join-Path $raiz "LOGS" } else { $pastaTeste })
+Pausa
+if ($comErro.Count) { exit 2 } else { exit 0 }
