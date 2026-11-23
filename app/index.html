@@ -179,7 +179,7 @@ const PADRAO = {
 // critérios usados nos cálculos (substituídos pela aba TOLERANCIAS da planilha PARAMETROS DE PROJETO)
 const TOL = {gcMin:100, hMin:-2, hMax:1};
 const CHAVE = "lab-campo-v1";
-const VERSAO_APP = "39 (23/11)";
+const VERSAO_APP = "40 (23/11)";
 /* ================= Armazenamento ================= */
 let DB;
 function carregar(){
@@ -823,7 +823,7 @@ function telaConc(id){
     <section class="card"><div class="grid g3">
       ${campoReg(e,"Série nº")}
       <label class="f">Data da moldagem<input id="c_data" type="date" value="${esc(e.data)}"></label>
-      ${campo("c_local","Local (Resumo)",e.local,'placeholder="Trincheira Norte" list="dl_local"')}<datalist id="dl_local">${LOCAIS.map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
+      <label class="f">Local (Resumo)<select id="c_local">${opts(LOCAIS,e.local,"Escolha")}</select></label>
       <label class="f full">Rua ou local<select id="c_rua">${opts(LOCAIS.concat(DB.cad.ruas.map(r=>r.nome)),e.rua,"Escolha (opcional)")}</select></label>
       <label class="f">Estrutura<select id="c_estrutura">${opts(ESTRUTURAS,e.estrutura,"Escolha")}</select></label>
       ${campo("c_elemento","Elemento concretado / estaca",e.elemento,'placeholder="VIGA COROA E:96 a 124" full')}
