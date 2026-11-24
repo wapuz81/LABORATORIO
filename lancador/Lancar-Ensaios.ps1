@@ -155,6 +155,59 @@ function ExcelFichas() {
   }
   return $script:xf
 }
+
+# ---------- aba RESUMO de cada ficha: cópia da aba do Resumo (só valores), com link do Registro para a aba do ensaio ----------
+$tocadas = @{}   # ficha (arquivo de destino) -> aba do Resumo que ela mostra
+function AbaDoEnsaio($wb, $serie) {
+  if (-not $serie) { return $null }
+  foreach ($s in $wb.Worksheets) { if ($s.Name -eq $serie) { return $s.Name } }
+  foreach ($s in $wb.Worksheets) { if ($s.Name -eq "SÉRIE $serie" -or $s.Name -like "SÉRIE $serie-*") { return $s.Name } }
+  foreach ($s in $wb.Worksheets) { if ($s.Name -like "*-R$serie-*") { return $s.Name } }
+  return $null
+}
+function ResumoNaFicha($wbF, $wsRes) {
+  $app = $wbF.Application
+  $app.DisplayAlerts = $false
+  foreach ($s in @($wbF.Worksheets)) { if ($s.Name -eq "RESUMO") { $s.Delete() | Out-Null } }
+  $wsRes.Copy($wbF.Worksheets.Item(1))
+  $r = $wbF.Worksheets.Item(1)
+  $r.Name = "RESUMO"
+  # só valores: nada de fórmula ligada ao arquivo do Resumo
+  $u = $r.UsedRange
+  $null = $u.Copy(); $null = $u.PasteSpecial(-4163); $app.CutCopyMode = $false
+  try { $r.Cells.Validation.Delete() } catch {}
+  foreach ($n in @($wbF.Names)) { try { if ("$($n.RefersTo)" -match '\[|\.xls') { $n.Delete() } } catch {} }
+  $links = $wbF.LinkSources(1)
+  if ($links) { foreach ($k in @($links)) { try { $wbF.BreakLink([string]$k, 1) } catch {} } }
+  # linha do cabeçalho: "Registro" na coluna A
+  $h = 0
+  for ($l = 1; $l -le 30; $l++) { if ("$($r.Cells($l, 1).Value2)".Trim() -eq "Registro") { $h = $l; break } }
+  if (-not $h) { throw "não achei o cabeçalho 'Registro' na aba $($wsRes.Name)" }
+  $ult = $r.Cells($r.Rows.Count, 1).End(-4162).Row
+  $n = 0
+  for ($l = $h + 1; $l -le $ult; $l++) {
+    $t = "$($r.Cells($l, 1).Text)".Trim()
+    if (-not $t) { continue }
+    $aba = AbaDoEnsaio $wbF (($t -split '[.,]')[0].Trim())
+    if ($aba) { $null = $r.Hyperlinks.Add($r.Cells($l, 1), "", "'$aba'!A1", "Abrir a aba $aba"); $n++ }
+  }
+  # em cada aba de ensaio: "← RESUMO" logo depois da área de impressão, na linha 1
+  foreach ($s in $wbF.Worksheets) {
+    if ($s.Name -eq "RESUMO" -or $s.Name -like "MODELO*") { continue }
+    $col = 0
+    $pa = "$($s.PageSetup.PrintArea)"
+    if ($pa) { try { $a = $s.Range(($pa -split '[,;]')[0]); $col = $a.Column + $a.Columns.Count } catch {} }
+    if (-not $col) { $col = $s.UsedRange.Column + $s.UsedRange.Columns.Count }
+    $c = $s.Cells(1, $col)
+    if ($null -eq $c.Value2 -or "$($c.Value2)" -eq "← RESUMO") {
+      $c.Value2 = "← RESUMO"
+      $null = $s.Hyperlinks.Add($c, "", "RESUMO!A1", "Voltar para o resumo")
+    }
+  }
+  $r.Activate()
+  $null = $r.Range("A1").Select()
+  return $n
+}
 function Abrir($caminho) {
   if (-not $abertos.ContainsKey($caminho)) {
     $app = if ($caminho -eq $destinos[$resumoOrig]) { $xl } else { ExcelFichas }
@@ -444,6 +497,7 @@ try {
   foreach ($e in $ensaios) {
     $rot = "$($e.tipo) R$($e.registro) - $(if ($e.rua) { $e.rua } else { $e.local }) - $($e.data)"
     try {
+        $tocadas[(Destino $orig)] = "Mat. Granular"
       if ($e.tipo -eq "densidade") {
         # ===== ficha =====
         # desde 23/11: uma planilha só para todos os materiais (config "fichaDensidade"); "fichasDensidade" por material fica como reserva
@@ -525,6 +579,7 @@ try {
             Log "   aviso: R$($e.registro).$i - material sem umidade ótima na Proj. Exec.; gravei a do campo ($($e.otima)%) na coluna proj."
           }
         }
+        $tocadas[(Destino $orig)] = "Viga. Benk"
         # a ficha mostra a mesma ótima do Resumo
         if ($otProj) { $ws.Range("R2").Value2 = [double]$otProj; $ws.Calculate() }
         Log "OK  $rot -> aba '$nome' + $($furos.Count) linha(s) no Resumo (Mat. Granular)"
@@ -604,6 +659,7 @@ try {
           Escreve $wr "F$r" ($e.camada)
           $d = $porEstaca[$est]
           if ($d.ContainsKey("LE")) { $wr.Range("G$r").Value2 = [double]$d["LE"] }
+        $tocadas[(Destino $orig)] = "Concreto"
           if ($d.ContainsKey("EIXO")) { $wr.Range("H$r").Value2 = [double]$d["EIXO"] }
           if ($d.ContainsKey("LD")) { $wr.Range("I$r").Value2 = [double]$d["LD"] }
         }
@@ -678,6 +734,7 @@ try {
         Escreve $wr "H$r" "10 X 20"
         Escreve $wr "I$r" "Compressão"
         Escreve $wr "J$r" $e.estrutura
+        $tocadas[(Destino $orig)] = $(if ($e.emulsao -eq "RR-1C") { "P. Ligação" } else { "Imprimação" })
         Escreve $wr "K$r" $e.fck
         Log "OK  $rot -> aba '$nome' + linha $r no Resumo (Concreto)"
       }
@@ -751,6 +808,7 @@ try {
         }
         Log "OK  $rot -> aba '$nome' + $($bands.Count) linha(s) no Resumo ($aba)"
       }
+          $tocadas[(Destino $orig)] = "CBUQ Gl Betume"
       elseif ($e.tipo -eq "betume") {
         # ===== CBUQ teor de betume + granulometria =====
         # ficha "TEOR DE BETUME" (uma por faixa): cabeçalho H2/H3/C3/C4/H4/C5/H5, pesagens na linha 8, retidos na coluna C das linhas 15–27
@@ -847,6 +905,21 @@ try {
         # teor e projeto como fração (as colunas X e Y são formatadas em %)
         if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor / 100, 4); $wr.Range("X$r").NumberFormatLocal = "0,00%" }
         if ($null -ne $e.proj) { $wr.Range("Y$r").Value2 = [double]([double]$e.proj / 100); $wr.Range("Y$r").NumberFormatLocal = "0,0%" }
+  # aba RESUMO das fichas que receberam ensaio (abertas no mesmo Excel do Resumo, para poder copiar a aba)
+  $wbR = $abertos[$destinos[$resumoOrig]]
+  if ($wbR) {
+    foreach ($arq in @($tocadas.Keys)) {
+      $wbF = $null
+      try {
+        $wbF = $xl.Workbooks.Open($arq)
+        $qtd = ResumoNaFicha $wbF ($wbR.Worksheets.Item($tocadas[$arq]))
+        $wbF.Save()
+        Log "   aba RESUMO atualizada em '$(Split-Path $arq -Leaf)' ($qtd registro(s) com link)"
+      }
+      catch { Log "   aviso: não consegui atualizar a aba RESUMO de '$(Split-Path $arq -Leaf)' ($($_.Exception.Message))" }
+      finally { if ($wbF) { try { $wbF.Close($false) } catch {} } }
+    }
+  }
         $txtAba = if ($nome) { "aba '$nome' + " } else { "" }
         Log "OK  $rot -> $($txtAba)linha $r no Resumo (CBUQ Gl Betume)$avisoFicha"
       }
