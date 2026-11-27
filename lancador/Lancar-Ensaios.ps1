@@ -43,15 +43,21 @@ foreach ($j in $jsons) {
   if ($pac.app -ne "ensaios-campo-trincheira") { Log "ERRO arquivo não é do app Ensaios de Campo: $($j.Name)"; $comErro[$j.Name] = $true; continue }
   foreach ($e in $pac.ensaios) {
     if ($jaLancados.ContainsKey($e.id)) { Log "Já lançado antes, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
-    # o mesmo ensaio pode vir em mais de um arquivo da mesma rodada (reenvio): lança só a primeira cópia
-    if ($naFila.ContainsKey($e.id)) { Log "Repetido em outro arquivo desta rodada, pulando: $($e.tipo) R$($e.registro) ($($e.rua))"; continue }
+    # o mesmo ensaio pode vir em mais de um arquivo da mesma rodada (reenvio): vale o envio mais novo
+    # (os arquivos estão em ordem de nome = ordem de envio, então o último que chega é o mais novo)
+    if ($naFila.ContainsKey($e.id)) {
+      $e | Add-Member -NotePropertyName arquivo -NotePropertyValue $j.Name -Force
+      $ensaios[$naFila[$e.id]] = $e
+      Log "Reenviado em outro arquivo desta rodada, usando o envio mais novo ($($j.Name)): $($e.tipo) R$($e.registro) ($($e.rua))"
+      continue
+    }
     $k = ChaveReg $e
     if ($k -and $regUsado.ContainsKey($k)) {
       Log "ERRO registro repetido: $($e.tipo) R$($e.registro) ($($e.rua)) de $($j.Name) - esse número já foi $($regUsado[$k]). Troque o número no app e envie de novo."
       $comErro[$j.Name] = $true; continue
     }
     if ($k) { $regUsado[$k] = "usado em $($j.Name), nesta mesma rodada" }
-    $naFila[$e.id] = $true
+    $naFila[$e.id] = $ensaios.Count   # posição dele na lista
     $e | Add-Member -NotePropertyName arquivo -NotePropertyValue $j.Name -Force
     # nomes antigos do app (um nome por fornecedor) -> material = tipo + procedência
     $antigo = @{ "Moledo Extrabel" = @("Moledo", "Extrabel Minérios"); "BGS Cotragon" = @("BGS", "Pedreira Cotragon"); "Brita 4A" = @("Bica Corrida", "Mineração Barigui") }
@@ -906,7 +912,9 @@ try {
         if ($null -ne $e.calc.teor) { $wr.Range("X$r").Value2 = [double][math]::Round([double]$e.calc.teor / 100, 4); $wr.Range("X$r").NumberFormatLocal = "0,00%" }
         if ($null -ne $e.proj) { $wr.Range("Y$r").Value2 = [double]([double]$e.proj / 100); $wr.Range("Y$r").NumberFormatLocal = "0,0%" }
   # aba RESUMO das fichas que receberam ensaio (abertas no mesmo Excel do Resumo, para poder copiar a aba)
-  $wbR = $abertos[$destinos[$resumoOrig]]
+  # se nenhum ensaio chegou a abrir o Resumo (todos deram erro), não há aba RESUMO para refazer
+  $wbR = $null
+  if ($resumoOrig -and $destinos.ContainsKey($resumoOrig) -and $abertos.ContainsKey($destinos[$resumoOrig])) { $wbR = $abertos[$destinos[$resumoOrig]] }
   if ($wbR) {
     foreach ($arq in @($tocadas.Keys)) {
       $wbF = $null
