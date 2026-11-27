@@ -46,8 +46,12 @@ try {
   }
   if (Test-Path $marca) { Remove-Item $marca -Force }
 
+  # mensagem de erro do lançador (stderr) não pode derrubar o vigia: com "Stop" o vigia caía na 1ª linha de erro,
+  # o lançador era interrompido no meio e a mesma janela voltava a cada 5 minutos. Agora o erro vai para "PARADO - leia.txt".
+  $ErrorActionPreference = "Continue"
   $saida = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Pasta "Lancar-Ensaios.ps1") -SemPausa 2>&1 | ForEach-Object { "$_" }
   $codigo = $LASTEXITCODE
+  $ErrorActionPreference = "Stop"
   $ok = @($saida | Where-Object { $_ -like "OK *" })
   $erros = @($saida | Where-Object { $_ -like "ERRO*" })
   $avisos = @($saida | Where-Object { $_ -like "*aviso:*" })
